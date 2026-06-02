@@ -4,8 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 export default async function DashboardPage() {
   const supabase = await createClient();
 
-  // Quick count to give the dashboard at least one number while we
-  // haven't built the list view yet. RLS scopes this to the user.
+  // Quick count for the dashboard. RLS scopes this to the user.
   const { count } = await supabase
     .from("contacts")
     .select("*", { count: "exact", head: true });
@@ -31,11 +30,27 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
-      <div className="mt-8 rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center">
-        <p className="text-sm text-slate-500">
-          Pipeline list view coming next (task 14).
-        </p>
-      </div>
+      {count && count > 0 ? (
+        <div className="mt-8 rounded-lg bg-white p-6 ring-1 ring-slate-200">
+          <p className="text-sm text-slate-600">
+            Head over to the{" "}
+            <Link
+              href="/contacts"
+              className="font-medium text-slate-900 underline underline-offset-2"
+            >
+              pipeline view
+            </Link>{" "}
+            to see and manage your contacts.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-8 rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center">
+          <p className="text-sm text-slate-500">
+            Once you add contacts, they&apos;ll show up here and on the
+            pipeline view.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

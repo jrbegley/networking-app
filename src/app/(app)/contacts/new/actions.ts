@@ -2,20 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-
-const PIPELINE_STAGES = [
-  "identified",
-  "researched",
-  "drafted",
-  "sent",
-  "replied",
-  "meeting_scheduled",
-  "meeting_held",
-  "nurture",
-  "dormant",
-] as const;
-
-type PipelineStage = (typeof PIPELINE_STAGES)[number];
+import { PIPELINE_STAGES, type PipelineStage } from "@/lib/pipeline";
 
 function isValidStage(value: string): value is PipelineStage {
   return (PIPELINE_STAGES as readonly string[]).includes(value);
