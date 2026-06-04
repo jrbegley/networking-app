@@ -49,6 +49,12 @@ export default async function AppLayout({
               >
                 Contacts
               </Link>
+              <Link
+                href="/settings"
+                className="text-slate-600 hover:text-slate-900"
+              >
+                Settings
+              </Link>
             </nav>
           </div>
           <div className="flex items-center gap-4 text-sm">

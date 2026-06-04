@@ -211,35 +211,44 @@ export async function draftEmail(
     return { error: "Not signed in.", draft: null };
   }
 
-  // Pull contact + company in one round-trip
-  const { data: contact, error: contactErr } = await supabase
-    .from("contacts")
-    .select(
-      `id, name, title, linkedin_url, notes, current_stage,
-       company:companies(name, industry)`,
-    )
-    .eq("id", contactId)
-    .maybeSingle();
+  // Parallel fetches: contact, latest Apollo, sender profile
+  const [contactRes, apolloRes, profileRes] = await Promise.all([
+    supabase
+      .from("contacts")
+      .select(
+        `id, name, title, linkedin_url, notes, current_stage,
+         company:companies(name, industry)`,
+      )
+      .eq("id", contactId)
+      .maybeSingle(),
+    supabase
+      .from("research_artifacts")
+      .select("payload")
+      .eq("contact_id", contactId)
+      .eq("source", "apollo")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("profiles")
+      .select("bio, resume_text, outreach_goal, linkedin_url")
+      .eq("id", user.id)
+      .maybeSingle(),
+  ]);
 
-  if (contactErr) {
+  if (contactRes.error) {
     return {
-      error: `Couldn't load contact: ${contactErr.message}`,
+      error: `Couldn't load contact: ${contactRes.error.message}`,
       draft: null,
     };
   }
+  const contact = contactRes.error ? null : contactRes.data;
   if (!contact) {
     return { error: "Contact not found.", draft: null };
   }
 
-  // Most recent Apollo artifact, if any (used as research context — no API call)
-  const { data: latestApollo } = await supabase
-    .from("research_artifacts")
-    .select("payload")
-    .eq("contact_id", contactId)
-    .eq("source", "apollo")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const latestApollo = apolloRes.data;
+  const profile = profileRes.data;
 
   const company = Array.isArray(contact.company)
     ? (contact.company[0] ?? null)
@@ -256,6 +265,12 @@ export async function draftEmail(
       linkedinUrl: contact.linkedin_url,
       apolloPayload: latestApollo?.payload ?? null,
       userNotes: contact.notes,
+      sender: {
+        bio: profile?.bio ?? null,
+        resumeText: profile?.resume_text ?? null,
+        outreachGoal: profile?.outreach_goal ?? null,
+        linkedinUrl: profile?.linkedin_url ?? null,
+      },
     });
   } catch (e) {
     return {

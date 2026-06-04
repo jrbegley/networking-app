@@ -14,11 +14,18 @@ const MODEL = "claude-sonnet-4-5-20250929";
  */
 const DRAFT_SYSTEM_PROMPT = `You are an expert at writing networking outreach emails for a student or young professional. The user is reaching out to people they want to network with — recruiters, founders, people at companies they're interested in, alumni, etc.
 
+You will be given:
+1. A profile of the SENDER (the user) — their background, resume, goals.
+2. A profile of the RECIPIENT — name, title, company, research notes.
+
+Your job is to draft an email FROM the sender TO the recipient that finds real common ground. Look for genuine overlaps: same school, same prior employer, same field, a project that connects, a city in common. If the sender's background doesn't give you a real hook, do NOT fabricate one — write a more direct email that leads with curiosity about the recipient's work instead.
+
 Your drafts must:
 - Be SHORT. 80-130 words max. Recipients are busy and scan inboxes.
 - Sound like a real human wrote them, not an AI. No stock phrases like "I hope this email finds you well," "I came across your profile," or "I'd love to pick your brain."
 - Have a clear, specific subject line — never generic like "Hello" or "Quick question."
-- Reference one specific thing about the recipient (their role, company, a project, a recent piece of work, mutual context). The user will provide research context — use it. If nothing specific is given, ask the user a clarifying question rather than make something up.
+- Reference one specific thing about the recipient (their role, company, a project, a recent piece of work, mutual context).
+- When real common ground exists between sender and recipient, use it as the opening hook. When it doesn't, lead with specific curiosity about the recipient's work.
 - Have a single, low-friction ask. Most often: a 15-minute call, an introduction, advice on a narrow topic. Never multiple asks.
 - Open with something other than "My name is..." or "I am a..." — a real human starts mid-thought. Save the credential drop for the second sentence, if at all.
 - Close with a soft, specific call to action — a proposed time window, an offer to make it easy, or a thank-you that doesn't demand a response.
@@ -47,11 +54,31 @@ export type Draft = {
   cacheCreationTokens: number;
 };
 
+export type SenderProfile = {
+  bio: string | null;
+  resumeText: string | null;
+  outreachGoal: string | null;
+  linkedinUrl: string | null;
+};
+
+function formatSenderProfile(p: SenderProfile): string | null {
+  const sections: string[] = [];
+  if (p.bio) sections.push(`# Background\n${p.bio}`);
+  if (p.outreachGoal) sections.push(`# Outreach goal\n${p.outreachGoal}`);
+  if (p.resumeText) sections.push(`# Resume / detailed history\n${p.resumeText}`);
+  if (p.linkedinUrl) sections.push(`# Sender's LinkedIn\n${p.linkedinUrl}`);
+  return sections.length > 0
+    ? `SENDER PROFILE:\n\n${sections.join("\n\n")}`
+    : null;
+}
+
 /**
  * Generate an outreach email draft given contact context.
  *
- * The system prompt is cache-flagged. The per-contact context lives in the
- * user message; it's small so caching it wouldn't help much.
+ * Two cache breakpoints to maximize hit rate:
+ *   1. The system prompt (stable across all users)
+ *   2. The sender's profile (stable across all drafts for one user)
+ * The per-contact context is fresh per request.
  */
 export async function draftOutreachEmail(opts: {
   contactName: string;
@@ -61,35 +88,49 @@ export async function draftOutreachEmail(opts: {
   linkedinUrl: string | null;
   apolloPayload: unknown | null;
   userNotes: string | null;
+  sender: SenderProfile;
 }): Promise<Draft> {
   const ctxLines: string[] = [];
-  ctxLines.push(`Recipient name: ${opts.contactName}`);
-  if (opts.contactTitle) ctxLines.push(`Title: ${opts.contactTitle}`);
-  if (opts.companyName) ctxLines.push(`Company: ${opts.companyName}`);
+  ctxLines.push("RECIPIENT:");
+  ctxLines.push(`- Name: ${opts.contactName}`);
+  if (opts.contactTitle) ctxLines.push(`- Title: ${opts.contactTitle}`);
+  if (opts.companyName) ctxLines.push(`- Company: ${opts.companyName}`);
   if (opts.companyIndustry)
-    ctxLines.push(`Industry: ${opts.companyIndustry}`);
-  if (opts.linkedinUrl) ctxLines.push(`LinkedIn: ${opts.linkedinUrl}`);
-  if (opts.userNotes) ctxLines.push(`\nUser's notes:\n${opts.userNotes}`);
+    ctxLines.push(`- Industry: ${opts.companyIndustry}`);
+  if (opts.linkedinUrl) ctxLines.push(`- LinkedIn: ${opts.linkedinUrl}`);
+  if (opts.userNotes) ctxLines.push(`\nUser's notes about this person:\n${opts.userNotes}`);
 
   if (opts.apolloPayload) {
     const apolloSummary = summarizeApolloPayload(opts.apolloPayload);
     if (apolloSummary) {
-      ctxLines.push(`\nApollo research:\n${apolloSummary}`);
+      ctxLines.push(`\nApollo research on recipient:\n${apolloSummary}`);
     }
   }
 
-  const userMessage = `Draft an outreach email to this person.\n\n${ctxLines.join("\n")}`;
+  const userMessage = `Draft an outreach email.\n\n${ctxLines.join("\n")}`;
+  const senderProfileText = formatSenderProfile(opts.sender);
+
+  // Build system array. Always include the base prompt (cached). If the user
+  // has a profile, append it as a second cached block.
+  const systemBlocks: Anthropic.TextBlockParam[] = [
+    {
+      type: "text",
+      text: DRAFT_SYSTEM_PROMPT,
+      cache_control: { type: "ephemeral" },
+    },
+  ];
+  if (senderProfileText) {
+    systemBlocks.push({
+      type: "text",
+      text: senderProfileText,
+      cache_control: { type: "ephemeral" },
+    });
+  }
 
   const response = await client.messages.create({
     model: MODEL,
     max_tokens: 600,
-    system: [
-      {
-        type: "text",
-        text: DRAFT_SYSTEM_PROMPT,
-        cache_control: { type: "ephemeral" },
-      },
-    ],
+    system: systemBlocks,
     messages: [{ role: "user", content: userMessage }],
   });
 
