@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { summarizeApolloPayload } from "@/lib/apollo-summary";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -96,6 +97,8 @@ export async function draftOutreachEmail(opts: {
   linkedinUrl: string | null;
   apolloPayload: unknown | null;
   userNotes: string | null;
+  /** Free-form research the user typed in to supplement Apollo. */
+  researchNotes: string | null;
   sender: SenderProfile;
 }): Promise<Draft> {
   const ctxLines: string[] = [];
@@ -113,6 +116,12 @@ export async function draftOutreachEmail(opts: {
     if (apolloSummary) {
       ctxLines.push(`\nApollo research on recipient:\n${apolloSummary}`);
     }
+  }
+
+  if (opts.researchNotes) {
+    ctxLines.push(
+      `\nUser's own research notes (treat as authoritative — these are first-hand observations):\n${opts.researchNotes}`,
+    );
   }
 
   const userMessage = `Draft an outreach email.\n\n${ctxLines.join("\n")}`;
@@ -171,143 +180,5 @@ function parseDraft(text: string): { subject: string; body: string } {
   };
 }
 
-/**
- * Apollo payloads are huge JSON blobs. Extract the high-signal bits as a
- * short human-readable summary so Claude isn't drowning in noise.
- *
- * Inclusive: pulls anything that's present rather than gating on specific
- * fields. Returns null only if Apollo found no match at all (person===null).
- */
-function summarizeApolloPayload(payload: unknown): string | null {
-  const person = (payload as { person?: Record<string, unknown> } | null)
-    ?.person;
-  if (!person) return null;
-
-  const lines: string[] = [];
-  const getStr = (k: string) => {
-    const v = person[k];
-    return typeof v === "string" && v.trim() ? v.trim() : null;
-  };
-  const getNum = (k: string) => {
-    const v = person[k];
-    return typeof v === "number" ? v : null;
-  };
-
-  // Identity
-  const fullName = getStr("name");
-  if (fullName) lines.push(`- Name: ${fullName}`);
-  const headline = getStr("headline");
-  if (headline) lines.push(`- Headline: ${headline}`);
-
-  // Role
-  if (getStr("title")) lines.push(`- Title: ${getStr("title")}`);
-  if (getStr("seniority")) lines.push(`- Seniority: ${getStr("seniority")}`);
-  if (getStr("departments"))
-    lines.push(`- Department: ${getStr("departments")}`);
-
-  // Contact info (signals what's available, not for us to use directly)
-  if (getStr("email")) lines.push(`- Email on file: ${getStr("email")}`);
-
-  // Location
-  const loc = [getStr("city"), getStr("state"), getStr("country")]
-    .filter(Boolean)
-    .join(", ");
-  if (loc) lines.push(`- Location: ${loc}`);
-
-  // Company
-  const org =
-    (person.organization as Record<string, unknown> | null | undefined) ??
-    null;
-  if (org) {
-    const orgGet = (k: string) => {
-      const v = org[k];
-      return typeof v === "string" && v.trim() ? v.trim() : null;
-    };
-    const orgName = orgGet("name");
-    if (orgName) lines.push(`- Company: ${orgName}`);
-    if (orgGet("industry"))
-      lines.push(`- Industry: ${orgGet("industry")}`);
-    if (orgGet("primary_domain"))
-      lines.push(`- Company domain: ${orgGet("primary_domain")}`);
-    const orgSize =
-      typeof org.estimated_num_employees === "number"
-        ? org.estimated_num_employees
-        : null;
-    if (orgSize)
-      lines.push(`- Company size: ~${orgSize} employees`);
-    if (orgGet("short_description"))
-      lines.push(`- Company description: ${orgGet("short_description")}`);
-  }
-
-  // Employment history
-  const history = person.employment_history as
-    | Array<Record<string, unknown>>
-    | undefined;
-  if (Array.isArray(history) && history.length > 0) {
-    const recent = history.slice(0, 5);
-    const histLines = recent
-      .map((h) => {
-        const t = typeof h.title === "string" ? h.title : null;
-        const o =
-          typeof h.organization_name === "string"
-            ? h.organization_name
-            : null;
-        const start = typeof h.start_date === "string" ? h.start_date : "";
-        const end =
-          typeof h.end_date === "string" && h.end_date
-            ? h.end_date
-            : "present";
-        if (t && o) {
-          return start
-            ? `  • ${t} at ${o} (${start} – ${end})`
-            : `  • ${t} at ${o}`;
-        }
-        if (o) return `  • ${o}`;
-        return null;
-      })
-      .filter(Boolean);
-    if (histLines.length > 0) {
-      lines.push("- Employment history:");
-      lines.push(...(histLines as string[]));
-    }
-  }
-
-  // Schools (Apollo sometimes returns these)
-  const schools = (person.schools ?? person.education) as
-    | Array<Record<string, unknown>>
-    | undefined;
-  if (Array.isArray(schools) && schools.length > 0) {
-    const schoolLines = schools
-      .slice(0, 5)
-      .map((s) => {
-        const name = typeof s.name === "string" ? s.name : null;
-        const degree = typeof s.degree === "string" ? s.degree : null;
-        const field =
-          typeof s.field_of_study === "string" ? s.field_of_study : null;
-        if (!name) return null;
-        const parts = [name, degree, field].filter(Boolean).join(" — ");
-        return `  • ${parts}`;
-      })
-      .filter(Boolean);
-    if (schoolLines.length > 0) {
-      lines.push("- Education:");
-      lines.push(...(schoolLines as string[]));
-    }
-  }
-
-  // LinkedIn / Twitter handles
-  if (getStr("linkedin_url"))
-    lines.push(`- LinkedIn: ${getStr("linkedin_url")}`);
-  if (getStr("twitter_url"))
-    lines.push(`- Twitter/X: ${getStr("twitter_url")}`);
-
-  // Avoid returning a useless 1-line summary; if we only got the name,
-  // surface that — Claude can at least use it. But if literally nothing
-  // came back, return null.
-  if (lines.length === 0) return null;
-
-  // Suppress getNum lint warning if unused
-  void getNum;
-
-  return lines.join("\n");
-}
+// summarizeApolloPayload now lives in src/lib/apollo-summary.ts so the
+// detail page and the drafting prompt share one implementation.

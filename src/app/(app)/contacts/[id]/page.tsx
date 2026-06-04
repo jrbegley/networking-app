@@ -8,6 +8,8 @@ import {
 } from "@/lib/pipeline";
 import { EnrichButton } from "./EnrichButton";
 import { DraftPanel } from "./DraftPanel";
+import { ResearchNotes } from "./ResearchNotes";
+import { summarizeApolloPayload } from "@/lib/apollo-summary";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -21,7 +23,7 @@ export default async function ContactDetailPage({ params }: PageProps) {
     .from("contacts")
     .select(
       `id, name, title, email, linkedin_url, current_stage, notes,
-       created_at, updated_at,
+       research_notes, created_at, updated_at,
        company:companies(id, name, domain, industry, size_range, linkedin_url)`,
     )
     .eq("id", id)
@@ -132,22 +134,31 @@ export default async function ContactDetailPage({ params }: PageProps) {
         </div>
         {!contact.linkedin_url && (
           <p className="mt-3 text-sm text-slate-500">
-            Add a LinkedIn URL to this contact to enable Apollo enrichment.
+            Add a LinkedIn URL to enable Apollo enrichment. You can still
+            add your own research notes below.
           </p>
         )}
+
+        {/* Apollo (auto) research */}
         {latestApollo ? (
-          <ApolloSummary
+          <ApolloDataBlock
             payload={latestApollo.payload}
             fetchedAt={latestApollo.created_at}
           />
         ) : (
           contact.linkedin_url && (
             <p className="mt-3 text-sm text-slate-500">
-              No research yet. Click <strong>Enrich with Apollo</strong> to
-              pull background.
+              No auto-research yet. Click <strong>Enrich with Apollo</strong>{" "}
+              above to pull background.
             </p>
           )
         )}
+
+        {/* User's own research notes (always editable) */}
+        <ResearchNotes
+          contactId={contact.id}
+          initial={contact.research_notes ?? ""}
+        />
       </section>
 
       {/* ── Draft outreach ──────────────────────────────────────────── */}
@@ -257,51 +268,36 @@ function CompanyField({
 }
 
 /**
- * Compact summary of the most useful fields from Apollo's payload.
- * The raw JSON is intentionally large; we don't dump it all.
+ * Render the full Apollo summary the model also sees. If Apollo found no
+ * match, we say so explicitly so the user knows enrichment ran and came
+ * back empty (vs. never having been tried).
  */
-function ApolloSummary({
+function ApolloDataBlock({
   payload,
   fetchedAt,
 }: {
   payload: unknown;
   fetchedAt: string;
 }) {
-  const person = (payload as { person?: Record<string, unknown> })?.person;
-  if (!person) {
+  const summary = summarizeApolloPayload(payload);
+
+  if (!summary) {
     return (
       <p className="mt-3 text-sm text-slate-500">
-        Apollo found no match (cached {new Date(fetchedAt).toLocaleDateString()}).
+        Apollo found no match for this LinkedIn URL (last checked{" "}
+        {new Date(fetchedAt).toLocaleDateString()}).
       </p>
     );
   }
 
-  const get = (k: string) => {
-    const v = person[k];
-    return typeof v === "string" ? v : null;
-  };
-
-  const city = get("city");
-  const state = get("state");
-  const country = get("country");
-  const location = [city, state, country].filter(Boolean).join(", ");
-
   return (
-    <div className="mt-3 space-y-2 text-sm">
-      <p className="text-xs text-slate-500">
-        Apollo data · fetched {new Date(fetchedAt).toLocaleDateString()}
+    <div className="mt-3">
+      <p className="text-xs uppercase tracking-wide text-slate-500">
+        Apollo · fetched {new Date(fetchedAt).toLocaleDateString()}
       </p>
-      <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {get("title") && (
-          <CompanyField label="Title (Apollo)" value={get("title")} />
-        )}
-        {get("email") && (
-          <CompanyField label="Email (Apollo)" value={get("email")} />
-        )}
-        {location && (
-          <CompanyField label="Location" value={location} />
-        )}
-      </dl>
+      <pre className="mt-1 whitespace-pre-wrap rounded-md bg-slate-50 p-4 font-sans text-sm text-slate-800 ring-1 ring-slate-200">
+        {summary}
+      </pre>
     </div>
   );
 }

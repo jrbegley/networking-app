@@ -178,6 +178,44 @@ export async function enrichContact(
   };
 }
 
+// ── Research notes ─────────────────────────────────────────────────────
+
+export type ResearchNotesState = {
+  error: string | null;
+  saved: boolean;
+};
+
+/**
+ * Save the contact's user-supplied research notes. These are free-form,
+ * meant to supplement Apollo / Tavily / etc. The drafting prompt treats
+ * them as authoritative first-hand observations.
+ */
+export async function saveResearchNotes(
+  _prevState: ResearchNotesState,
+  formData: FormData,
+): Promise<ResearchNotesState> {
+  const contactId = String(formData.get("contactId") ?? "");
+  if (!contactId) return { error: "Missing contact id.", saved: false };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in.", saved: false };
+
+  const notes = String(formData.get("research_notes") ?? "").trim() || null;
+
+  const { error } = await supabase
+    .from("contacts")
+    .update({ research_notes: notes })
+    .eq("id", contactId);
+
+  if (error) return { error: error.message, saved: false };
+
+  revalidatePath(`/contacts/${contactId}`);
+  return { error: null, saved: true };
+}
+
 // ── Email drafting ─────────────────────────────────────────────────────
 
 export type DraftState = {
@@ -216,7 +254,7 @@ export async function draftEmail(
     supabase
       .from("contacts")
       .select(
-        `id, name, title, linkedin_url, notes, current_stage,
+        `id, name, title, linkedin_url, notes, research_notes, current_stage,
          company:companies(name, industry)`,
       )
       .eq("id", contactId)
@@ -265,6 +303,7 @@ export async function draftEmail(
       linkedinUrl: contact.linkedin_url,
       apolloPayload: latestApollo?.payload ?? null,
       userNotes: contact.notes,
+      researchNotes: contact.research_notes ?? null,
       sender: {
         bio: profile?.bio ?? null,
         resumeText: profile?.resume_text ?? null,
