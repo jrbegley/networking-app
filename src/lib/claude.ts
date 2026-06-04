@@ -16,33 +16,41 @@ const DRAFT_SYSTEM_PROMPT = `You are an expert at writing networking outreach em
 
 You will be given:
 1. A profile of the SENDER (the user) — their background, resume, goals.
-2. A profile of the RECIPIENT — name, title, company, research notes.
+2. A profile of the RECIPIENT — name, possibly title, company, research notes.
 
-Your job is to draft an email FROM the sender TO the recipient that finds real common ground. Look for genuine overlaps: same school, same prior employer, same field, a project that connects, a city in common. If the sender's background doesn't give you a real hook, do NOT fabricate one — write a more direct email that leads with curiosity about the recipient's work instead.
+# CRITICAL OPERATING RULES
 
-Your drafts must:
-- Be SHORT. 80-130 words max. Recipients are busy and scan inboxes.
+1. You MUST ALWAYS produce a draft in the SUBJECT/BODY format below. NEVER ask the user clarifying questions. NEVER refuse. NEVER explain what you'd need to do better. If the recipient info is sparse, write the best short, curious email you can with what's available.
+2. NEVER invent specific facts about the recipient (no fake school, no fake project, no fake mutual connection). If you don't have a fact, write around it.
+3. Real common ground between sender and recipient is the strongest opener. If a genuine overlap exists in the provided data — same school, same prior employer, same field, same city, a project that connects — use it. If no genuine overlap is provided, default to specific curiosity about the recipient's role or company instead, without claiming knowledge you don't have.
+
+# CRAFT RULES
+
+Drafts must:
+- Be SHORT. 80–130 words max. Recipients are busy and scan inboxes.
 - Sound like a real human wrote them, not an AI. No stock phrases like "I hope this email finds you well," "I came across your profile," or "I'd love to pick your brain."
 - Have a clear, specific subject line — never generic like "Hello" or "Quick question."
-- Reference one specific thing about the recipient (their role, company, a project, a recent piece of work, mutual context).
-- When real common ground exists between sender and recipient, use it as the opening hook. When it doesn't, lead with specific curiosity about the recipient's work.
-- Have a single, low-friction ask. Most often: a 15-minute call, an introduction, advice on a narrow topic. Never multiple asks.
+- Reference at least one specific thing about the recipient: their role, their company, their industry, their title — whatever IS given.
+- Have a single, low-friction ask. Most often: a 15-minute call, an introduction, or advice on a narrow topic. Never multiple asks.
 - Open with something other than "My name is..." or "I am a..." — a real human starts mid-thought. Save the credential drop for the second sentence, if at all.
 - Close with a soft, specific call to action — a proposed time window, an offer to make it easy, or a thank-you that doesn't demand a response.
 - Use the recipient's first name only.
 
-Style rules:
+Style:
 - Active voice. Concrete nouns. No hedging adverbs ("really," "just," "actually").
 - No exclamation marks unless quoting someone.
 - Vary sentence length, but lean shorter than longer.
 - Don't sign off with the user's name — the email client adds the signature.
 
-OUTPUT FORMAT (strict — do not deviate):
+# OUTPUT FORMAT (strict — never deviate, never wrap in code blocks, never preface)
+
 SUBJECT: <subject line>
 BODY:
-<email body, no greeting prefix beyond "Hi <first name>," — the body starts on the next line after BODY:>
+Hi <first name>,
 
-Do not add any commentary before, after, or around this format.`;
+<the email body, two-to-five short paragraphs.>
+
+That is the ONLY acceptable output. No commentary before, after, or around it.`;
 
 export type Draft = {
   subject: string;
@@ -166,51 +174,140 @@ function parseDraft(text: string): { subject: string; body: string } {
 /**
  * Apollo payloads are huge JSON blobs. Extract the high-signal bits as a
  * short human-readable summary so Claude isn't drowning in noise.
+ *
+ * Inclusive: pulls anything that's present rather than gating on specific
+ * fields. Returns null only if Apollo found no match at all (person===null).
  */
 function summarizeApolloPayload(payload: unknown): string | null {
-  const person = (payload as { person?: Record<string, unknown> })?.person;
+  const person = (payload as { person?: Record<string, unknown> } | null)
+    ?.person;
   if (!person) return null;
 
   const lines: string[] = [];
-  const get = (k: string) => {
+  const getStr = (k: string) => {
     const v = person[k];
-    return typeof v === "string" ? v : null;
+    return typeof v === "string" && v.trim() ? v.trim() : null;
   };
-  if (get("title")) lines.push(`- Title: ${get("title")}`);
-  const loc = [get("city"), get("state"), get("country")]
+  const getNum = (k: string) => {
+    const v = person[k];
+    return typeof v === "number" ? v : null;
+  };
+
+  // Identity
+  const fullName = getStr("name");
+  if (fullName) lines.push(`- Name: ${fullName}`);
+  const headline = getStr("headline");
+  if (headline) lines.push(`- Headline: ${headline}`);
+
+  // Role
+  if (getStr("title")) lines.push(`- Title: ${getStr("title")}`);
+  if (getStr("seniority")) lines.push(`- Seniority: ${getStr("seniority")}`);
+  if (getStr("departments"))
+    lines.push(`- Department: ${getStr("departments")}`);
+
+  // Contact info (signals what's available, not for us to use directly)
+  if (getStr("email")) lines.push(`- Email on file: ${getStr("email")}`);
+
+  // Location
+  const loc = [getStr("city"), getStr("state"), getStr("country")]
     .filter(Boolean)
     .join(", ");
   if (loc) lines.push(`- Location: ${loc}`);
 
-  const org = (person.organization as Record<string, unknown>) ?? null;
+  // Company
+  const org =
+    (person.organization as Record<string, unknown> | null | undefined) ??
+    null;
   if (org) {
-    if (typeof org.name === "string") lines.push(`- Company: ${org.name}`);
-    if (typeof org.industry === "string")
-      lines.push(`- Industry: ${org.industry}`);
-    if (typeof org.estimated_num_employees === "number")
-      lines.push(`- Company size: ~${org.estimated_num_employees} employees`);
+    const orgGet = (k: string) => {
+      const v = org[k];
+      return typeof v === "string" && v.trim() ? v.trim() : null;
+    };
+    const orgName = orgGet("name");
+    if (orgName) lines.push(`- Company: ${orgName}`);
+    if (orgGet("industry"))
+      lines.push(`- Industry: ${orgGet("industry")}`);
+    if (orgGet("primary_domain"))
+      lines.push(`- Company domain: ${orgGet("primary_domain")}`);
+    const orgSize =
+      typeof org.estimated_num_employees === "number"
+        ? org.estimated_num_employees
+        : null;
+    if (orgSize)
+      lines.push(`- Company size: ~${orgSize} employees`);
+    if (orgGet("short_description"))
+      lines.push(`- Company description: ${orgGet("short_description")}`);
   }
 
+  // Employment history
   const history = person.employment_history as
     | Array<Record<string, unknown>>
     | undefined;
   if (Array.isArray(history) && history.length > 0) {
-    const recent = history.slice(0, 3);
-    const lines2 = recent
+    const recent = history.slice(0, 5);
+    const histLines = recent
       .map((h) => {
         const t = typeof h.title === "string" ? h.title : null;
         const o =
           typeof h.organization_name === "string"
             ? h.organization_name
             : null;
-        return t && o ? `  • ${t} at ${o}` : null;
+        const start = typeof h.start_date === "string" ? h.start_date : "";
+        const end =
+          typeof h.end_date === "string" && h.end_date
+            ? h.end_date
+            : "present";
+        if (t && o) {
+          return start
+            ? `  • ${t} at ${o} (${start} – ${end})`
+            : `  • ${t} at ${o}`;
+        }
+        if (o) return `  • ${o}`;
+        return null;
       })
       .filter(Boolean);
-    if (lines2.length > 0) {
-      lines.push("- Recent roles:");
-      lines.push(...(lines2 as string[]));
+    if (histLines.length > 0) {
+      lines.push("- Employment history:");
+      lines.push(...(histLines as string[]));
     }
   }
 
-  return lines.length > 0 ? lines.join("\n") : null;
+  // Schools (Apollo sometimes returns these)
+  const schools = (person.schools ?? person.education) as
+    | Array<Record<string, unknown>>
+    | undefined;
+  if (Array.isArray(schools) && schools.length > 0) {
+    const schoolLines = schools
+      .slice(0, 5)
+      .map((s) => {
+        const name = typeof s.name === "string" ? s.name : null;
+        const degree = typeof s.degree === "string" ? s.degree : null;
+        const field =
+          typeof s.field_of_study === "string" ? s.field_of_study : null;
+        if (!name) return null;
+        const parts = [name, degree, field].filter(Boolean).join(" — ");
+        return `  • ${parts}`;
+      })
+      .filter(Boolean);
+    if (schoolLines.length > 0) {
+      lines.push("- Education:");
+      lines.push(...(schoolLines as string[]));
+    }
+  }
+
+  // LinkedIn / Twitter handles
+  if (getStr("linkedin_url"))
+    lines.push(`- LinkedIn: ${getStr("linkedin_url")}`);
+  if (getStr("twitter_url"))
+    lines.push(`- Twitter/X: ${getStr("twitter_url")}`);
+
+  // Avoid returning a useless 1-line summary; if we only got the name,
+  // surface that — Claude can at least use it. But if literally nothing
+  // came back, return null.
+  if (lines.length === 0) return null;
+
+  // Suppress getNum lint warning if unused
+  void getNum;
+
+  return lines.join("\n");
 }
