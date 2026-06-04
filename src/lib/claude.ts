@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { summarizeApolloPayload } from "@/lib/apollo-summary";
+import { summarizeTavilyPayload } from "@/lib/tavily-summary";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -96,8 +97,9 @@ export async function draftOutreachEmail(opts: {
   companyIndustry: string | null;
   linkedinUrl: string | null;
   apolloPayload: unknown | null;
+  tavilyPayload: unknown | null;
   userNotes: string | null;
-  /** Free-form research the user typed in to supplement Apollo. */
+  /** Free-form research the user typed in to supplement Apollo / Tavily. */
   researchNotes: string | null;
   sender: SenderProfile;
 }): Promise<Draft> {
@@ -115,6 +117,13 @@ export async function draftOutreachEmail(opts: {
     const apolloSummary = summarizeApolloPayload(opts.apolloPayload);
     if (apolloSummary) {
       ctxLines.push(`\nApollo research on recipient:\n${apolloSummary}`);
+    }
+  }
+
+  if (opts.tavilyPayload) {
+    const tavilySummary = summarizeTavilyPayload(opts.tavilyPayload);
+    if (tavilySummary) {
+      ctxLines.push(`\nWeb research on recipient (Tavily):\n${tavilySummary}`);
     }
   }
 

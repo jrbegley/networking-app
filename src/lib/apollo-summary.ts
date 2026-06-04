@@ -3,7 +3,34 @@
  * page display AND for the Claude drafting prompt. Single source of truth
  * so what the user sees matches what the model sees.
  */
+/**
+ * Detect a "shell" Apollo response — Apollo's free tier confirms a person
+ * exists in their DB but masks every field except `linkedin_url` and `id`.
+ * If we only have those, we have effectively nothing.
+ */
+export function isApolloShellResponse(payload: unknown): boolean {
+  const person = (payload as { person?: Record<string, unknown> } | null)
+    ?.person;
+  if (!person) return true;
+  const hasName =
+    typeof person.name === "string" && person.name.trim().length > 0;
+  const hasTitle =
+    typeof person.title === "string" && person.title.trim().length > 0;
+  const hasHeadline =
+    typeof person.headline === "string" && person.headline.trim().length > 0;
+  const org = person.organization as Record<string, unknown> | null | undefined;
+  const hasOrg =
+    !!org &&
+    typeof org.name === "string" &&
+    (org.name as string).trim().length > 0;
+  const history = person.employment_history as Array<unknown> | undefined;
+  const hasHistory = Array.isArray(history) && history.length > 0;
+  return !(hasName || hasTitle || hasHeadline || hasOrg || hasHistory);
+}
+
 export function summarizeApolloPayload(payload: unknown): string | null {
+  if (isApolloShellResponse(payload)) return null;
+
   const person = (payload as { person?: Record<string, unknown> } | null)
     ?.person;
   if (!person) return null;

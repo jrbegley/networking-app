@@ -7,9 +7,14 @@ import {
   type PipelineStage,
 } from "@/lib/pipeline";
 import { EnrichButton } from "./EnrichButton";
+import { TavilyButton } from "./TavilyButton";
 import { DraftPanel } from "./DraftPanel";
 import { ResearchNotes } from "./ResearchNotes";
-import { summarizeApolloPayload } from "@/lib/apollo-summary";
+import {
+  summarizeApolloPayload,
+  isApolloShellResponse,
+} from "@/lib/apollo-summary";
+import { summarizeTavilyPayload } from "@/lib/tavily-summary";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -47,15 +52,28 @@ export default async function ContactDetailPage({ params }: PageProps) {
     : (contact.company ?? null);
   const stage = contact.current_stage as PipelineStage;
 
-  // Most recent Apollo artifact (if any) for display
-  const { data: latestApollo } = await supabase
-    .from("research_artifacts")
-    .select("id, payload, created_at")
-    .eq("contact_id", id)
-    .eq("source", "apollo")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // Most recent Apollo + Tavily artifacts for display
+  const [
+    { data: latestApollo },
+    { data: latestTavily },
+  ] = await Promise.all([
+    supabase
+      .from("research_artifacts")
+      .select("id, payload, created_at")
+      .eq("contact_id", id)
+      .eq("source", "apollo")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("research_artifacts")
+      .select("id, payload, created_at")
+      .eq("contact_id", id)
+      .eq("source", "tavily")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
   // Interactions timeline
   const { data: interactions } = await supabase
@@ -123,35 +141,50 @@ export default async function ContactDetailPage({ params }: PageProps) {
 
       {/* ── Research panel ───────────────────────────────────────────── */}
       <section className="rounded-lg bg-white p-6 ring-1 ring-slate-200">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <h2 className="text-base font-semibold text-slate-900">
             Research
           </h2>
-          <EnrichButton
-            contactId={contact.id}
-            disabled={!contact.linkedin_url}
-          />
+          <div className="flex items-start gap-3">
+            <TavilyButton contactId={contact.id} />
+            <EnrichButton
+              contactId={contact.id}
+              disabled={!contact.linkedin_url}
+            />
+          </div>
         </div>
-        {!contact.linkedin_url && (
+
+        {/* Web research (Tavily) first — usually higher-signal than Apollo
+            free tier */}
+        {latestTavily ? (
+          <TavilyDataBlock
+            payload={latestTavily.payload}
+            fetchedAt={latestTavily.created_at}
+          />
+        ) : (
           <p className="mt-3 text-sm text-slate-500">
-            Add a LinkedIn URL to enable Apollo enrichment. You can still
-            add your own research notes below.
+            No web research yet. Click <strong>Research the web</strong> to
+            pull a Tavily summary + top sources.
           </p>
         )}
 
         {/* Apollo (auto) research */}
-        {latestApollo ? (
+        {latestApollo && (
           <ApolloDataBlock
             payload={latestApollo.payload}
             fetchedAt={latestApollo.created_at}
           />
-        ) : (
-          contact.linkedin_url && (
-            <p className="mt-3 text-sm text-slate-500">
-              No auto-research yet. Click <strong>Enrich with Apollo</strong>{" "}
-              above to pull background.
-            </p>
-          )
+        )}
+        {!latestApollo && contact.linkedin_url && (
+          <p className="mt-3 text-sm text-slate-500">
+            Apollo not yet attempted. <strong>Enrich with Apollo</strong>{" "}
+            adds structured data when available.
+          </p>
+        )}
+        {!contact.linkedin_url && (
+          <p className="mt-3 text-sm text-slate-500">
+            Add a LinkedIn URL to enable Apollo enrichment.
+          </p>
         )}
 
         {/* User's own research notes (always editable) */}
@@ -281,9 +314,10 @@ function ApolloDataBlock({
 }) {
   const summary = summarizeApolloPayload(payload);
   const fetchedDate = new Date(fetchedAt).toLocaleDateString();
+  const isShell = isApolloShellResponse(payload);
 
   return (
-    <div className="mt-3">
+    <div className="mt-4 border-t border-slate-100 pt-4">
       <p className="text-xs uppercase tracking-wide text-slate-500">
         Apollo · fetched {fetchedDate}
       </p>
@@ -292,17 +326,59 @@ function ApolloDataBlock({
         <pre className="mt-1 whitespace-pre-wrap rounded-md bg-slate-50 p-4 font-sans text-sm text-slate-800 ring-1 ring-slate-200">
           {summary}
         </pre>
+      ) : isShell ? (
+        <p className="mt-1 text-sm text-slate-500">
+          Apollo&apos;s free tier confirmed the LinkedIn URL exists in their
+          database but didn&apos;t return any usable details. Web research
+          above is the better source on the free plan.
+        </p>
       ) : (
         <p className="mt-1 text-sm text-slate-500">
           Apollo found no match (last checked {fetchedDate}).
         </p>
       )}
 
-      {/* Always provide an escape hatch to the raw payload — useful for
-          debugging when the summarizer skips fields we didn't expect. */}
       <details className="mt-2">
         <summary className="cursor-pointer select-none text-xs text-slate-500 hover:text-slate-700">
-          Show raw Apollo payload (for debugging)
+          Show raw Apollo payload
+        </summary>
+        <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-slate-900 p-3 text-xs leading-relaxed text-slate-100">
+          {JSON.stringify(payload, null, 2)}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
+function TavilyDataBlock({
+  payload,
+  fetchedAt,
+}: {
+  payload: unknown;
+  fetchedAt: string;
+}) {
+  const summary = summarizeTavilyPayload(payload);
+  const fetchedDate = new Date(fetchedAt).toLocaleDateString();
+
+  return (
+    <div className="mt-3">
+      <p className="text-xs uppercase tracking-wide text-slate-500">
+        Web · Tavily · fetched {fetchedDate}
+      </p>
+
+      {summary ? (
+        <pre className="mt-1 whitespace-pre-wrap rounded-md bg-slate-50 p-4 font-sans text-sm text-slate-800 ring-1 ring-slate-200">
+          {summary}
+        </pre>
+      ) : (
+        <p className="mt-1 text-sm text-slate-500">
+          Tavily returned no useful results.
+        </p>
+      )}
+
+      <details className="mt-2">
+        <summary className="cursor-pointer select-none text-xs text-slate-500 hover:text-slate-700">
+          Show raw Tavily payload
         </summary>
         <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-slate-900 p-3 text-xs leading-relaxed text-slate-100">
           {JSON.stringify(payload, null, 2)}

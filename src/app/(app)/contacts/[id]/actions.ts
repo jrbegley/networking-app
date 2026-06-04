@@ -2,6 +2,8 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { enrichPersonByLinkedInUrl } from "@/lib/apollo";
+import { searchTavily } from "@/lib/tavily";
+import { isApolloShellResponse } from "@/lib/apollo-summary";
 import { draftOutreachEmail, type Draft } from "@/lib/claude";
 import { revalidatePath } from "next/cache";
 
@@ -141,7 +143,11 @@ export async function enrichContact(
   const contactUpdate: Record<string, unknown> = {};
   if (!contact.email && person.email) contactUpdate.email = person.email;
   if (!contact.title && person.title) contactUpdate.title = person.title;
-  if (contact.current_stage === "identified") {
+  // Only advance stage if Apollo actually returned useful data (not a free-tier shell)
+  if (
+    contact.current_stage === "identified" &&
+    !isApolloShellResponse(response)
+  ) {
     contactUpdate.current_stage = "researched";
   }
   if (Object.keys(contactUpdate).length > 0) {
@@ -175,6 +181,136 @@ export async function enrichContact(
     error: null,
     cached: false,
     message: "Apollo enrichment saved.",
+  };
+}
+
+// ── Tavily web research ────────────────────────────────────────────────
+
+export type TavilyState = {
+  error: string | null;
+  cached: boolean;
+  message: string | null;
+};
+
+const TAVILY_CACHE_FRESH_DAYS = 14; // web changes faster than Apollo data
+
+/**
+ * Search the web via Tavily for the contact. Builds a query from the
+ * contact's name + company (if known). Cache-first: 14-day window.
+ *
+ * Result is saved as a research_artifact with source='tavily'.
+ */
+export async function researchWithTavily(
+  _prevState: TavilyState,
+  formData: FormData,
+): Promise<TavilyState> {
+  const contactId = String(formData.get("contactId") ?? "");
+  if (!contactId) {
+    return { error: "Missing contact id.", cached: false, message: null };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: "Not signed in.", cached: false, message: null };
+  }
+
+  const { data: contact, error: contactErr } = await supabase
+    .from("contacts")
+    .select(
+      `id, name, title, current_stage,
+       company:companies(name)`,
+    )
+    .eq("id", contactId)
+    .maybeSingle();
+
+  if (contactErr) {
+    return {
+      error: `Couldn't load contact: ${contactErr.message}`,
+      cached: false,
+      message: null,
+    };
+  }
+  if (!contact) {
+    return { error: "Contact not found.", cached: false, message: null };
+  }
+
+  const company = Array.isArray(contact.company)
+    ? (contact.company[0] ?? null)
+    : ((contact.company as { name: string } | null) ?? null);
+
+  // Cache check
+  const cutoff = new Date(
+    Date.now() - TAVILY_CACHE_FRESH_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  const { data: cached } = await supabase
+    .from("research_artifacts")
+    .select("id, created_at")
+    .eq("contact_id", contactId)
+    .eq("source", "tavily")
+    .gte("created_at", cutoff)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (cached) {
+    return {
+      error: null,
+      cached: true,
+      message: `Using cached web research (fetched ${new Date(cached.created_at).toLocaleDateString()}).`,
+    };
+  }
+
+  // Build the query
+  const query = company?.name
+    ? `${contact.name} ${company.name}`
+    : contact.name;
+
+  let response;
+  try {
+    response = await searchTavily(query);
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Tavily call failed.",
+      cached: false,
+      message: null,
+    };
+  }
+
+  const { error: artifactErr } = await supabase
+    .from("research_artifacts")
+    .insert({
+      owner_id: user.id,
+      contact_id: contactId,
+      source: "tavily",
+      payload: response,
+    });
+  if (artifactErr) {
+    return {
+      error: `Couldn't save Tavily result: ${artifactErr.message}`,
+      cached: false,
+      message: null,
+    };
+  }
+
+  // Advance stage to researched on real web data
+  if (contact.current_stage === "identified") {
+    await supabase
+      .from("contacts")
+      .update({ current_stage: "researched" })
+      .eq("id", contactId);
+  }
+
+  revalidatePath(`/contacts/${contactId}`);
+  revalidatePath("/contacts");
+
+  return {
+    error: null,
+    cached: false,
+    message: "Web research saved.",
   };
 }
 
@@ -249,8 +385,8 @@ export async function draftEmail(
     return { error: "Not signed in.", draft: null };
   }
 
-  // Parallel fetches: contact, latest Apollo, sender profile
-  const [contactRes, apolloRes, profileRes] = await Promise.all([
+  // Parallel fetches: contact, latest Apollo, latest Tavily, sender profile
+  const [contactRes, apolloRes, tavilyRes, profileRes] = await Promise.all([
     supabase
       .from("contacts")
       .select(
@@ -264,6 +400,14 @@ export async function draftEmail(
       .select("payload")
       .eq("contact_id", contactId)
       .eq("source", "apollo")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("research_artifacts")
+      .select("payload")
+      .eq("contact_id", contactId)
+      .eq("source", "tavily")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -286,6 +430,7 @@ export async function draftEmail(
   }
 
   const latestApollo = apolloRes.data;
+  const latestTavily = tavilyRes.data;
   const profile = profileRes.data;
 
   const company = Array.isArray(contact.company)
@@ -302,6 +447,7 @@ export async function draftEmail(
       companyIndustry: company?.industry ?? null,
       linkedinUrl: contact.linkedin_url,
       apolloPayload: latestApollo?.payload ?? null,
+      tavilyPayload: latestTavily?.payload ?? null,
       userNotes: contact.notes,
       researchNotes: contact.research_notes ?? null,
       sender: {
