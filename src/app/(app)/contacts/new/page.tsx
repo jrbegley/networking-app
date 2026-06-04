@@ -8,7 +8,7 @@ import {
   type CreateContactState,
   type PreviewResult,
 } from "./actions";
-import type { ApolloPerson } from "@/lib/apollo";
+import type { LinkedInProfile } from "@/lib/apify";
 
 const initialState: CreateContactState = { error: null, success: null };
 
@@ -85,8 +85,6 @@ export default function NewContactPage() {
 
     if (result.error) {
       setLookupMsg({ kind: "error", text: result.error });
-      // If Apollo returned no person but did respond, we still want to keep
-      // the URL in the LinkedIn field so the user doesn't have to retype it.
       setDefaults((d) => ({ ...d, linkedinUrl: lookupUrl }));
       setFormKey((k) => k + 1);
       return;
@@ -99,20 +97,24 @@ export default function NewContactPage() {
       return;
     }
 
-    const person: ApolloPerson = result.person;
+    const p: LinkedInProfile = result.person;
+    // Pull the best available title: current position title OR headline
+    const title = p.currentPosition?.title ?? p.headline ?? "";
+    // Company from current position
+    const company = p.currentPosition?.companyName ?? "";
     setDefaults({
-      name: person.name ?? "",
-      title: person.title ?? "",
-      company: person.organization?.name ?? "",
-      email: person.email ?? "",
-      linkedinUrl: person.linkedin_url ?? lookupUrl,
+      name: p.name ?? "",
+      title,
+      company,
+      email: "",        // Apify free tier doesn't return email
+      linkedinUrl: p.profileUrl ?? lookupUrl,
       stage: "researched",
     });
     setApolloPayload(JSON.stringify(result.payload));
     setFormKey((k) => k + 1);
     setLookupMsg({
       kind: "success",
-      text: `Found ${person.name ?? "person"} — review and add.`,
+      text: `Found ${p.name ?? "person"} — review and add.`,
     });
   }
 
@@ -168,8 +170,8 @@ export default function NewContactPage() {
           Auto-fill from LinkedIn URL
         </label>
         <p className="mt-1 text-xs text-slate-300">
-          Pastes the URL → calls Apollo → pre-fills the form below. Burns 1
-          Apollo credit per lookup.
+          Pastes the URL → scrapes LinkedIn via Apify → pre-fills the form
+          below. ~$0.004 per lookup, 10–30s wait.
         </p>
         <div className="mt-3 flex gap-2">
           <input

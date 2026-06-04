@@ -11,15 +11,10 @@ import {
   STAGE_BADGE_CLASS,
   type PipelineStage,
 } from "@/lib/pipeline";
-import { EnrichButton } from "./EnrichButton";
 import { TavilyButton } from "./TavilyButton";
 import { LinkedInButton } from "./LinkedInButton";
 import { DraftPanel } from "./DraftPanel";
 import { ResearchNotes } from "./ResearchNotes";
-import {
-  summarizeApolloPayload,
-  isApolloShellResponse,
-} from "@/lib/apollo-summary";
 import { summarizeTavilyPayload } from "@/lib/tavily-summary";
 import { summarizeLinkedInPayload } from "@/lib/linkedin-summary";
 
@@ -59,10 +54,9 @@ export default async function ContactDetailPage({ params }: PageProps) {
     : (contact.company ?? null);
   const stage = contact.current_stage as PipelineStage;
 
-  // Most recent LinkedIn + Apollo + Tavily artifacts for display
+  // Most recent LinkedIn + Tavily artifacts for display (Apollo hidden)
   const [
     { data: latestLinkedin },
-    { data: latestApollo },
     { data: latestTavily },
   ] = await Promise.all([
     supabase
@@ -70,14 +64,6 @@ export default async function ContactDetailPage({ params }: PageProps) {
       .select("id, payload, created_at")
       .eq("contact_id", id)
       .eq("source", "linkedin")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("research_artifacts")
-      .select("id, payload, created_at")
-      .eq("contact_id", id)
-      .eq("source", "apollo")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -167,10 +153,6 @@ export default async function ContactDetailPage({ params }: PageProps) {
               disabled={!contact.linkedin_url}
             />
             <TavilyButton contactId={contact.id} />
-            <EnrichButton
-              contactId={contact.id}
-              disabled={!contact.linkedin_url}
-            />
           </div>
         </div>
 
@@ -194,14 +176,6 @@ export default async function ContactDetailPage({ params }: PageProps) {
           <TavilyDataBlock
             payload={latestTavily.payload}
             fetchedAt={latestTavily.created_at}
-          />
-        )}
-
-        {/* Apollo (legacy, often empty on free tier) */}
-        {latestApollo && (
-          <ApolloDataBlock
-            payload={latestApollo.payload}
-            fetchedAt={latestApollo.created_at}
           />
         )}
 
@@ -320,56 +294,6 @@ function CompanyField({
         {label}
       </dt>
       <dd className="mt-0.5 text-slate-900">{value}</dd>
-    </div>
-  );
-}
-
-/**
- * Render the full Apollo summary the model also sees. If Apollo found no
- * match, we say so explicitly so the user knows enrichment ran and came
- * back empty (vs. never having been tried).
- */
-function ApolloDataBlock({
-  payload,
-  fetchedAt,
-}: {
-  payload: unknown;
-  fetchedAt: string;
-}) {
-  const summary = summarizeApolloPayload(payload);
-  const fetchedDate = new Date(fetchedAt).toLocaleDateString();
-  const isShell = isApolloShellResponse(payload);
-
-  return (
-    <div className="mt-4 border-t border-slate-100 pt-4">
-      <p className="text-xs uppercase tracking-wide text-slate-500">
-        Apollo · fetched {fetchedDate}
-      </p>
-
-      {summary ? (
-        <pre className="mt-1 whitespace-pre-wrap rounded-md bg-slate-50 p-4 font-sans text-sm text-slate-800 ring-1 ring-slate-200">
-          {summary}
-        </pre>
-      ) : isShell ? (
-        <p className="mt-1 text-sm text-slate-500">
-          Apollo&apos;s free tier confirmed the LinkedIn URL exists in their
-          database but didn&apos;t return any usable details. Web research
-          above is the better source on the free plan.
-        </p>
-      ) : (
-        <p className="mt-1 text-sm text-slate-500">
-          Apollo found no match (last checked {fetchedDate}).
-        </p>
-      )}
-
-      <details className="mt-2">
-        <summary className="cursor-pointer select-none text-xs text-slate-500 hover:text-slate-700">
-          Show raw Apollo payload
-        </summary>
-        <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-slate-900 p-3 text-xs leading-relaxed text-slate-100">
-          {JSON.stringify(payload, null, 2)}
-        </pre>
-      </details>
     </div>
   );
 }

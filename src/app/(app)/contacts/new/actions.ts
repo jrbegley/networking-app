@@ -4,10 +4,13 @@ import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { PIPELINE_STAGES, type PipelineStage } from "@/lib/pipeline";
 import {
-  enrichPersonByLinkedInUrl,
-  type ApolloMatchResponse,
-  type ApolloPerson,
-} from "@/lib/apollo";
+  scrapeLinkedInProfile,
+  type LinkedInProfile,
+} from "@/lib/apify";
+
+// Server actions in this file may call Apify (10-30s). This config is
+// read at the route segment level so we need it here too.
+export const maxDuration = 60;
 
 function isValidStage(value: string): value is PipelineStage {
   return (PIPELINE_STAGES as readonly string[]).includes(value);
@@ -18,21 +21,20 @@ export type CreateContactState = {
   success: { contactId: string; name: string } | null;
 };
 
-// ── Preview action (called directly from client, not via form action) ──────
+// ── Preview action ──────────────────────────────────────────────────────
 
 export type PreviewResult = {
-  person: ApolloPerson | null;
-  /** Full Apollo response — round-tripped through a hidden form field so we
-   *  can save it as a research_artifact on the eventual contact insert,
-   *  WITHOUT making a second API call. */
-  payload: ApolloMatchResponse | null;
+  person: LinkedInProfile | null;
+  /** Full profile payload — carried through a hidden form field and saved
+   *  as a research_artifact on contact insert. No second API call. */
+  payload: LinkedInProfile | null;
   error: string | null;
 };
 
 /**
- * Look up a LinkedIn URL via Apollo without saving anything.
- * Burns one Apollo credit per call (no DB cache available — no contact yet).
- * Caller must be authenticated.
+ * Scrape a LinkedIn URL via Apify and return the profile for pre-filling
+ * the Add Contact form. Costs $0.004 per call. No DB cache available yet
+ * (no contact_id to cache against) — we persist it at save time instead.
  */
 export async function previewLinkedIn(
   linkedinUrl: string,
@@ -47,11 +49,7 @@ export async function previewLinkedIn(
 
   const url = linkedinUrl.trim();
   if (!url) {
-    return {
-      person: null,
-      payload: null,
-      error: "Paste a LinkedIn URL first.",
-    };
+    return { person: null, payload: null, error: "Paste a LinkedIn URL first." };
   }
   if (!url.startsWith("http")) {
     return {
@@ -62,21 +60,20 @@ export async function previewLinkedIn(
   }
 
   try {
-    const response = await enrichPersonByLinkedInUrl(url);
-    if (!response.person) {
+    const profile = await scrapeLinkedInProfile(url);
+    if (!profile) {
       return {
         person: null,
-        payload: response,
-        error:
-          "Apollo couldn't find a match for that URL. You can still fill in manually.",
+        payload: null,
+        error: "Apify returned no profile for that URL. Fill in manually.",
       };
     }
-    return { person: response.person, payload: response, error: null };
+    return { person: profile, payload: profile, error: null };
   } catch (e) {
     return {
       person: null,
       payload: null,
-      error: e instanceof Error ? e.message : "Lookup failed.",
+      error: e instanceof Error ? e.message : "LinkedIn lookup failed.",
     };
   }
 }
@@ -132,14 +129,14 @@ export async function createContact(
     };
   }
 
-  // Parse the optional Apollo payload — failure here should NOT block the
-  // save; we just won't have the artifact for this contact.
-  let apolloPayload: ApolloMatchResponse | null = null;
+  // Parse the optional LinkedIn payload carried through the hidden field.
+  // Failure here must NOT block the save.
+  let linkedinPayload: LinkedInProfile | null = null;
   if (apolloPayloadRaw) {
     try {
-      apolloPayload = JSON.parse(apolloPayloadRaw) as ApolloMatchResponse;
+      linkedinPayload = JSON.parse(apolloPayloadRaw) as LinkedInProfile;
     } catch {
-      apolloPayload = null;
+      linkedinPayload = null;
     }
   }
 
@@ -190,7 +187,7 @@ export async function createContact(
       email,
       linkedin_url: linkedinUrl,
       current_stage: stage,
-      source: apolloPayload ? "apollo_lookup" : "manual",
+      source: linkedinPayload ? "linkedin_lookup" : "manual",
       notes,
     })
     .select("id, name")
@@ -210,33 +207,14 @@ export async function createContact(
     };
   }
 
-  // ── Persist Apollo artifact and enrich company (best effort) ───────────
-  if (apolloPayload) {
-    // Best effort — we don't fail the save if either of these fails.
+  // ── Persist LinkedIn artifact (best effort — don't fail the save) ───────
+  if (linkedinPayload) {
     await supabase.from("research_artifacts").insert({
       owner_id: user.id,
       contact_id: contact.id,
-      source: "apollo",
-      payload: apolloPayload,
+      source: "linkedin",
+      payload: linkedinPayload,
     });
-
-    if (companyId && apolloPayload.person?.organization) {
-      const org = apolloPayload.person.organization;
-      const companyUpdate: Record<string, unknown> = {};
-      if (org.primary_domain) companyUpdate.domain = org.primary_domain;
-      if (org.industry) companyUpdate.industry = org.industry;
-      if (org.linkedin_url) companyUpdate.linkedin_url = org.linkedin_url;
-      if (org.id) companyUpdate.apollo_id = org.id;
-      if (org.estimated_num_employees) {
-        companyUpdate.size_range = String(org.estimated_num_employees);
-      }
-      if (Object.keys(companyUpdate).length > 0) {
-        await supabase
-          .from("companies")
-          .update(companyUpdate)
-          .eq("id", companyId);
-      }
-    }
   }
 
   revalidatePath("/dashboard");
