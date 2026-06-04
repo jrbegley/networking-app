@@ -7,9 +7,14 @@ import {
   extractTavily,
   type TavilyResearchPayload,
 } from "@/lib/tavily";
+import { scrapeLinkedInProfile } from "@/lib/apify";
 import { isApolloShellResponse } from "@/lib/apollo-summary";
 import { draftOutreachEmail, type Draft } from "@/lib/claude";
 import { revalidatePath } from "next/cache";
+
+// Extends the Hobby-plan default of 10s up to the 60s max so the Apify
+// run-sync call can finish (typical 10-30s for a single profile).
+export const maxDuration = 60;
 
 export type EnrichState = {
   error: string | null;
@@ -185,6 +190,147 @@ export async function enrichContact(
     error: null,
     cached: false,
     message: "Apollo enrichment saved.",
+  };
+}
+
+// ── LinkedIn enrichment via Apify (HarvestAPI) ─────────────────────────
+
+export type LinkedInEnrichState = {
+  error: string | null;
+  cached: boolean;
+  message: string | null;
+};
+
+// LinkedIn profile data changes slowly; 90-day cache cuts cost ~12x at
+// our volume vs. re-scraping monthly.
+const LINKEDIN_CACHE_FRESH_DAYS = 90;
+
+export async function enrichWithLinkedin(
+  _prevState: LinkedInEnrichState,
+  formData: FormData,
+): Promise<LinkedInEnrichState> {
+  const contactId = String(formData.get("contactId") ?? "");
+  if (!contactId) {
+    return { error: "Missing contact id.", cached: false, message: null };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: "Not signed in.", cached: false, message: null };
+  }
+
+  const { data: contact, error: contactErr } = await supabase
+    .from("contacts")
+    .select("id, linkedin_url, email, title, current_stage, company_id")
+    .eq("id", contactId)
+    .maybeSingle();
+
+  if (contactErr) {
+    return {
+      error: `Couldn't load contact: ${contactErr.message}`,
+      cached: false,
+      message: null,
+    };
+  }
+  if (!contact) {
+    return { error: "Contact not found.", cached: false, message: null };
+  }
+  if (!contact.linkedin_url) {
+    return {
+      error: "Add a LinkedIn URL to this contact first.",
+      cached: false,
+      message: null,
+    };
+  }
+
+  // Cache check
+  const cutoff = new Date(
+    Date.now() - LINKEDIN_CACHE_FRESH_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  const { data: cached } = await supabase
+    .from("research_artifacts")
+    .select("id, created_at")
+    .eq("contact_id", contactId)
+    .eq("source", "linkedin")
+    .gte("created_at", cutoff)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (cached) {
+    return {
+      error: null,
+      cached: true,
+      message: `Using cached LinkedIn data (fetched ${new Date(cached.created_at).toLocaleDateString()}). No credit burned.`,
+    };
+  }
+
+  let profile;
+  try {
+    profile = await scrapeLinkedInProfile(contact.linkedin_url);
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "LinkedIn scrape failed.",
+      cached: false,
+      message: null,
+    };
+  }
+
+  if (!profile) {
+    // Save a negative-cache so we don't keep burning credits on bad URLs
+    await supabase.from("research_artifacts").insert({
+      owner_id: user.id,
+      contact_id: contactId,
+      source: "linkedin",
+      payload: { empty: true },
+    });
+    return {
+      error: "Apify returned no profile for that URL.",
+      cached: false,
+      message: null,
+    };
+  }
+
+  const { error: artifactErr } = await supabase
+    .from("research_artifacts")
+    .insert({
+      owner_id: user.id,
+      contact_id: contactId,
+      source: "linkedin",
+      payload: profile,
+    });
+  if (artifactErr) {
+    return {
+      error: `Couldn't save LinkedIn data: ${artifactErr.message}`,
+      cached: false,
+      message: null,
+    };
+  }
+
+  // Backfill empty contact fields from the scraped profile
+  const contactUpdate: Record<string, unknown> = {};
+  if (!contact.title) {
+    const newTitle = profile.headline ?? profile.currentPosition?.title;
+    if (newTitle) contactUpdate.title = newTitle;
+  }
+  if (contact.current_stage === "identified") {
+    contactUpdate.current_stage = "researched";
+  }
+  if (Object.keys(contactUpdate).length > 0) {
+    await supabase.from("contacts").update(contactUpdate).eq("id", contactId);
+  }
+
+  revalidatePath(`/contacts/${contactId}`);
+  revalidatePath("/contacts");
+
+  return {
+    error: null,
+    cached: false,
+    message: "LinkedIn profile saved.",
   };
 }
 
@@ -421,8 +567,9 @@ export async function draftEmail(
     return { error: "Not signed in.", draft: null };
   }
 
-  // Parallel fetches: contact, latest Apollo, latest Tavily, sender profile
-  const [contactRes, apolloRes, tavilyRes, profileRes] = await Promise.all([
+  // Parallel fetches: contact, latest LinkedIn, Apollo, Tavily, sender profile
+  const [contactRes, linkedinRes, apolloRes, tavilyRes, profileRes] =
+    await Promise.all([
     supabase
       .from("contacts")
       .select(
@@ -430,6 +577,14 @@ export async function draftEmail(
          company:companies(name, industry)`,
       )
       .eq("id", contactId)
+      .maybeSingle(),
+    supabase
+      .from("research_artifacts")
+      .select("payload")
+      .eq("contact_id", contactId)
+      .eq("source", "linkedin")
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle(),
     supabase
       .from("research_artifacts")
@@ -465,6 +620,7 @@ export async function draftEmail(
     return { error: "Contact not found.", draft: null };
   }
 
+  const latestLinkedin = linkedinRes.data;
   const latestApollo = apolloRes.data;
   const latestTavily = tavilyRes.data;
   const profile = profileRes.data;
@@ -482,6 +638,7 @@ export async function draftEmail(
       companyName: company?.name ?? null,
       companyIndustry: company?.industry ?? null,
       linkedinUrl: contact.linkedin_url,
+      linkedinPayload: latestLinkedin?.payload ?? null,
       apolloPayload: latestApollo?.payload ?? null,
       tavilyPayload: latestTavily?.payload ?? null,
       userNotes: contact.notes,

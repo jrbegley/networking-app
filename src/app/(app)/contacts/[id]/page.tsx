@@ -8,6 +8,7 @@ import {
 } from "@/lib/pipeline";
 import { EnrichButton } from "./EnrichButton";
 import { TavilyButton } from "./TavilyButton";
+import { LinkedInButton } from "./LinkedInButton";
 import { DraftPanel } from "./DraftPanel";
 import { ResearchNotes } from "./ResearchNotes";
 import {
@@ -15,6 +16,7 @@ import {
   isApolloShellResponse,
 } from "@/lib/apollo-summary";
 import { summarizeTavilyPayload } from "@/lib/tavily-summary";
+import { summarizeLinkedInPayload } from "@/lib/linkedin-summary";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -52,11 +54,20 @@ export default async function ContactDetailPage({ params }: PageProps) {
     : (contact.company ?? null);
   const stage = contact.current_stage as PipelineStage;
 
-  // Most recent Apollo + Tavily artifacts for display
+  // Most recent LinkedIn + Apollo + Tavily artifacts for display
   const [
+    { data: latestLinkedin },
     { data: latestApollo },
     { data: latestTavily },
   ] = await Promise.all([
+    supabase
+      .from("research_artifacts")
+      .select("id, payload, created_at")
+      .eq("contact_id", id)
+      .eq("source", "linkedin")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
     supabase
       .from("research_artifacts")
       .select("id, payload, created_at")
@@ -146,6 +157,10 @@ export default async function ContactDetailPage({ params }: PageProps) {
             Research
           </h2>
           <div className="flex items-start gap-3">
+            <LinkedInButton
+              contactId={contact.id}
+              disabled={!contact.linkedin_url}
+            />
             <TavilyButton contactId={contact.id} />
             <EnrichButton
               contactId={contact.id}
@@ -154,36 +169,40 @@ export default async function ContactDetailPage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* Web research (Tavily) first — usually higher-signal than Apollo
-            free tier */}
-        {latestTavily ? (
+        {/* LinkedIn (Apify) first — highest signal, structured data */}
+        {latestLinkedin ? (
+          <LinkedInDataBlock
+            payload={latestLinkedin.payload}
+            fetchedAt={latestLinkedin.created_at}
+          />
+        ) : (
+          contact.linkedin_url && (
+            <p className="mt-3 text-sm text-slate-500">
+              No LinkedIn scrape yet. Click <strong>Pull LinkedIn</strong>{" "}
+              for the full profile (~$0.004 per scrape, 10–30s wait).
+            </p>
+          )
+        )}
+
+        {/* Web research (Tavily) */}
+        {latestTavily && (
           <TavilyDataBlock
             payload={latestTavily.payload}
             fetchedAt={latestTavily.created_at}
           />
-        ) : (
-          <p className="mt-3 text-sm text-slate-500">
-            No web research yet. Click <strong>Research the web</strong> to
-            pull a Tavily summary + top sources.
-          </p>
         )}
 
-        {/* Apollo (auto) research */}
+        {/* Apollo (legacy, often empty on free tier) */}
         {latestApollo && (
           <ApolloDataBlock
             payload={latestApollo.payload}
             fetchedAt={latestApollo.created_at}
           />
         )}
-        {!latestApollo && contact.linkedin_url && (
-          <p className="mt-3 text-sm text-slate-500">
-            Apollo not yet attempted. <strong>Enrich with Apollo</strong>{" "}
-            adds structured data when available.
-          </p>
-        )}
+
         {!contact.linkedin_url && (
           <p className="mt-3 text-sm text-slate-500">
-            Add a LinkedIn URL to enable Apollo enrichment.
+            Add a LinkedIn URL to enable LinkedIn / Apollo enrichment.
           </p>
         )}
 
@@ -341,6 +360,44 @@ function ApolloDataBlock({
       <details className="mt-2">
         <summary className="cursor-pointer select-none text-xs text-slate-500 hover:text-slate-700">
           Show raw Apollo payload
+        </summary>
+        <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-slate-900 p-3 text-xs leading-relaxed text-slate-100">
+          {JSON.stringify(payload, null, 2)}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
+function LinkedInDataBlock({
+  payload,
+  fetchedAt,
+}: {
+  payload: unknown;
+  fetchedAt: string;
+}) {
+  const summary = summarizeLinkedInPayload(payload);
+  const fetchedDate = new Date(fetchedAt).toLocaleDateString();
+
+  return (
+    <div className="mt-3">
+      <p className="text-xs uppercase tracking-wide text-slate-500">
+        LinkedIn · scraped {fetchedDate}
+      </p>
+
+      {summary ? (
+        <pre className="mt-1 whitespace-pre-wrap rounded-md bg-slate-50 p-4 font-sans text-sm text-slate-800 ring-1 ring-slate-200">
+          {summary}
+        </pre>
+      ) : (
+        <p className="mt-1 text-sm text-slate-500">
+          Apify returned no usable profile (last checked {fetchedDate}).
+        </p>
+      )}
+
+      <details className="mt-2">
+        <summary className="cursor-pointer select-none text-xs text-slate-500 hover:text-slate-700">
+          Show raw LinkedIn payload
         </summary>
         <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-slate-900 p-3 text-xs leading-relaxed text-slate-100">
           {JSON.stringify(payload, null, 2)}
