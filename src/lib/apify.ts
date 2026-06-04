@@ -103,7 +103,11 @@ export async function scrapeLinkedInProfile(
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        profileUrls: [url],
+        // HarvestAPI actor input schema (confirmed from docs):
+        // - queries: array of LinkedIn profile URLs
+        // - profileScraperMode: which tier to use ($4/1k = no email)
+        queries: [url],
+        profileScraperMode: "Profile details no email ($4 per 1k)",
       }),
       cache: "no-store",
     },
