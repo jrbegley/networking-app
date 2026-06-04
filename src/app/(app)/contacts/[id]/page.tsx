@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+
+// Extend default 10s up to 60s so the Apify LinkedIn scrape (typically
+// 10-30s) can finish before Vercel kills the function. Applies to all
+// server actions invoked from this page.
+export const maxDuration = 60;
 import {
   STAGE_LABEL,
   STAGE_BADGE_CLASS,

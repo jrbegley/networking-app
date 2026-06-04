@@ -12,9 +12,8 @@ import { isApolloShellResponse } from "@/lib/apollo-summary";
 import { draftOutreachEmail, type Draft } from "@/lib/claude";
 import { revalidatePath } from "next/cache";
 
-// Extends the Hobby-plan default of 10s up to the 60s max so the Apify
-// run-sync call can finish (typical 10-30s for a single profile).
-export const maxDuration = 60;
+// NB: maxDuration lives on page.tsx — server-action files can only export
+// async functions, not constants.
 
 export type EnrichState = {
   error: string | null;
