@@ -193,7 +193,7 @@ export default async function ContactDetailPage({ params }: PageProps) {
       </section>
 
       {/* ── Draft outreach ──────────────────────────────────────────── */}
-      <DraftPanel contactId={contact.id} hasResearch={!!latestApollo} />
+      <DraftPanel contactId={contact.id} hasResearch={!!(latestLinkedin || latestTavily)} />
 
       {/* ── Company panel ───────────────────────────────────────────── */}
       {company && (
