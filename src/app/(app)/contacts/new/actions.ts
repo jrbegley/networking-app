@@ -8,10 +8,6 @@ import {
   type LinkedInProfile,
 } from "@/lib/apify";
 
-// Server actions in this file may call Apify (10-30s). This config is
-// read at the route segment level so we need it here too.
-export const maxDuration = 60;
-
 function isValidStage(value: string): value is PipelineStage {
   return (PIPELINE_STAGES as readonly string[]).includes(value);
 }
