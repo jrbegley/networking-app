@@ -3,6 +3,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { PIPELINE_STAGES, type PipelineStage } from "@/lib/pipeline";
+import {
+  enrichPersonByLinkedInUrl,
+  type ApolloMatchResponse,
+  type ApolloPerson,
+} from "@/lib/apollo";
 
 function isValidStage(value: string): value is PipelineStage {
   return (PIPELINE_STAGES as readonly string[]).includes(value);
@@ -13,13 +18,77 @@ export type CreateContactState = {
   success: { contactId: string; name: string } | null;
 };
 
+// ── Preview action (called directly from client, not via form action) ──────
+
+export type PreviewResult = {
+  person: ApolloPerson | null;
+  /** Full Apollo response — round-tripped through a hidden form field so we
+   *  can save it as a research_artifact on the eventual contact insert,
+   *  WITHOUT making a second API call. */
+  payload: ApolloMatchResponse | null;
+  error: string | null;
+};
+
 /**
- * Server action that creates a contact and (if a company name was provided)
- * either finds or creates the matching company.
+ * Look up a LinkedIn URL via Apollo without saving anything.
+ * Burns one Apollo credit per call (no DB cache available — no contact yet).
+ * Caller must be authenticated.
+ */
+export async function previewLinkedIn(
+  linkedinUrl: string,
+): Promise<PreviewResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { person: null, payload: null, error: "Not signed in." };
+  }
+
+  const url = linkedinUrl.trim();
+  if (!url) {
+    return {
+      person: null,
+      payload: null,
+      error: "Paste a LinkedIn URL first.",
+    };
+  }
+  if (!url.startsWith("http")) {
+    return {
+      person: null,
+      payload: null,
+      error: "URL should start with http:// or https://",
+    };
+  }
+
+  try {
+    const response = await enrichPersonByLinkedInUrl(url);
+    if (!response.person) {
+      return {
+        person: null,
+        payload: response,
+        error:
+          "Apollo couldn't find a match for that URL. You can still fill in manually.",
+      };
+    }
+    return { person: response.person, payload: response, error: null };
+  } catch (e) {
+    return {
+      person: null,
+      payload: null,
+      error: e instanceof Error ? e.message : "Lookup failed.",
+    };
+  }
+}
+
+// ── Create action ──────────────────────────────────────────────────────────
+
+/**
+ * Create a contact. If an apollo_payload hidden field is present, also
+ * persist it as a research_artifact tied to the new contact and enrich
+ * the linked company with the Apollo organization data.
  *
- * RLS handles the per-user isolation — we just need to set owner_id on every
- * insert. If the user isn't authenticated, the action returns an error
- * (the (app) layout would normally redirect them, but defense in depth).
+ * RLS handles per-user isolation — we just set owner_id on every insert.
  */
 export async function createContact(
   _prevState: CreateContactState,
@@ -43,6 +112,7 @@ export async function createContact(
     String(formData.get("linkedin_url") ?? "").trim() || null;
   const stageRaw = String(formData.get("stage") ?? "identified");
   const notes = String(formData.get("notes") ?? "").trim() || null;
+  const apolloPayloadRaw = String(formData.get("apollo_payload") ?? "");
 
   if (!name) {
     return { error: "Name is required.", success: null };
@@ -52,7 +122,6 @@ export async function createContact(
   }
   const stage: PipelineStage = stageRaw;
 
-  // Light validation on optional URL/email so we surface obvious typos early
   if (email && !email.includes("@")) {
     return { error: "Email looks invalid.", success: null };
   }
@@ -61,6 +130,17 @@ export async function createContact(
       error: "LinkedIn URL should start with http:// or https://",
       success: null,
     };
+  }
+
+  // Parse the optional Apollo payload — failure here should NOT block the
+  // save; we just won't have the artifact for this contact.
+  let apolloPayload: ApolloMatchResponse | null = null;
+  if (apolloPayloadRaw) {
+    try {
+      apolloPayload = JSON.parse(apolloPayloadRaw) as ApolloMatchResponse;
+    } catch {
+      apolloPayload = null;
+    }
   }
 
   // ── Resolve company (find or create) ────────────────────────────────────
@@ -110,14 +190,13 @@ export async function createContact(
       email,
       linkedin_url: linkedinUrl,
       current_stage: stage,
-      source: "manual",
+      source: apolloPayload ? "apollo_lookup" : "manual",
       notes,
     })
     .select("id, name")
     .single();
 
   if (contactErr) {
-    // Unique-violation on (owner_id, linkedin_url) is the most common collision
     if (contactErr.code === "23505") {
       return {
         error:
@@ -131,7 +210,35 @@ export async function createContact(
     };
   }
 
-  // Make sure any list views re-fetch with the new row
+  // ── Persist Apollo artifact and enrich company (best effort) ───────────
+  if (apolloPayload) {
+    // Best effort — we don't fail the save if either of these fails.
+    await supabase.from("research_artifacts").insert({
+      owner_id: user.id,
+      contact_id: contact.id,
+      source: "apollo",
+      payload: apolloPayload,
+    });
+
+    if (companyId && apolloPayload.person?.organization) {
+      const org = apolloPayload.person.organization;
+      const companyUpdate: Record<string, unknown> = {};
+      if (org.primary_domain) companyUpdate.domain = org.primary_domain;
+      if (org.industry) companyUpdate.industry = org.industry;
+      if (org.linkedin_url) companyUpdate.linkedin_url = org.linkedin_url;
+      if (org.id) companyUpdate.apollo_id = org.id;
+      if (org.estimated_num_employees) {
+        companyUpdate.size_range = String(org.estimated_num_employees);
+      }
+      if (Object.keys(companyUpdate).length > 0) {
+        await supabase
+          .from("companies")
+          .update(companyUpdate)
+          .eq("id", companyId);
+      }
+    }
+  }
+
   revalidatePath("/dashboard");
   revalidatePath("/contacts");
 
