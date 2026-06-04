@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { enrichPersonByLinkedInUrl } from "@/lib/apollo";
+import { draftOutreachEmail, type Draft } from "@/lib/claude";
 import { revalidatePath } from "next/cache";
 
 export type EnrichState = {
@@ -175,4 +176,103 @@ export async function enrichContact(
     cached: false,
     message: "Apollo enrichment saved.",
   };
+}
+
+// ── Email drafting ─────────────────────────────────────────────────────
+
+export type DraftState = {
+  error: string | null;
+  draft: Draft | null;
+};
+
+/**
+ * Generate a Claude-drafted outreach email for a contact, using whatever
+ * research we already have on file (no Apollo call here — purely uses
+ * cached artifacts).
+ *
+ * Draft is NOT persisted in this version. User sees it; we'll persist
+ * (and let them edit / push to Outlook Drafts) in a follow-up.
+ */
+export async function draftEmail(
+  _prevState: DraftState,
+  formData: FormData,
+): Promise<DraftState> {
+  const contactId = String(formData.get("contactId") ?? "");
+  if (!contactId) {
+    return { error: "Missing contact id.", draft: null };
+  }
+
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: "Not signed in.", draft: null };
+  }
+
+  // Pull contact + company in one round-trip
+  const { data: contact, error: contactErr } = await supabase
+    .from("contacts")
+    .select(
+      `id, name, title, linkedin_url, notes, current_stage,
+       company:companies(name, industry)`,
+    )
+    .eq("id", contactId)
+    .maybeSingle();
+
+  if (contactErr) {
+    return {
+      error: `Couldn't load contact: ${contactErr.message}`,
+      draft: null,
+    };
+  }
+  if (!contact) {
+    return { error: "Contact not found.", draft: null };
+  }
+
+  // Most recent Apollo artifact, if any (used as research context — no API call)
+  const { data: latestApollo } = await supabase
+    .from("research_artifacts")
+    .select("payload")
+    .eq("contact_id", contactId)
+    .eq("source", "apollo")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const company = Array.isArray(contact.company)
+    ? (contact.company[0] ?? null)
+    : ((contact.company as { name: string; industry: string | null } | null) ??
+      null);
+
+  let draft: Draft;
+  try {
+    draft = await draftOutreachEmail({
+      contactName: contact.name,
+      contactTitle: contact.title,
+      companyName: company?.name ?? null,
+      companyIndustry: company?.industry ?? null,
+      linkedinUrl: contact.linkedin_url,
+      apolloPayload: latestApollo?.payload ?? null,
+      userNotes: contact.notes,
+    });
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Drafting failed.",
+      draft: null,
+    };
+  }
+
+  // Auto-advance researched -> drafted so the stage reflects reality
+  if (contact.current_stage === "researched") {
+    await supabase
+      .from("contacts")
+      .update({ current_stage: "drafted" })
+      .eq("id", contactId);
+    revalidatePath(`/contacts/${contactId}`);
+    revalidatePath("/contacts");
+  }
+
+  return { error: null, draft };
 }

@@ -7,6 +7,7 @@ import {
   type PipelineStage,
 } from "@/lib/pipeline";
 import { EnrichButton } from "./EnrichButton";
+import { DraftPanel } from "./DraftPanel";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -148,6 +149,9 @@ export default async function ContactDetailPage({ params }: PageProps) {
           )
         )}
       </section>
+
+      {/* ── Draft outreach ──────────────────────────────────────────── */}
+      <DraftPanel contactId={contact.id} hasResearch={!!latestApollo} />
 
       {/* ── Company panel ───────────────────────────────────────────── */}
       {company && (
