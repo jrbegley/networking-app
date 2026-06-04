@@ -4,9 +4,13 @@ import { useActionState, useState } from "react";
 import {
   saveProfile,
   scanMyLinkedIn,
+  recordResumeUpload,
+  getResumeDownloadUrl,
+  deleteResume,
   type ProfileFormState,
 } from "./actions";
 import { parsePdfToText } from "@/lib/pdf-parse-client";
+import { createClient } from "@/lib/supabase/client";
 
 const initialState: ProfileFormState = { error: null, saved: false };
 
@@ -16,6 +20,8 @@ type Initial = {
   resumeText: string;
   outreachGoal: string;
   linkedinUrl: string;
+  resumePdfName: string | null;
+  resumePdfUploadedAt: string | null;
 };
 
 export function SettingsForm({ initial }: { initial: Initial }) {
@@ -24,19 +30,23 @@ export function SettingsForm({ initial }: { initial: Initial }) {
     initialState,
   );
 
-  // Controlled fields for the two that we want to update programmatically
-  // (resume from PDF upload, bio/resume from LinkedIn scan). The rest stay
-  // uncontrolled / defaultValue.
+  // Controlled fields for those we update programmatically
   const [bio, setBio] = useState(initial.bio);
   const [resumeText, setResumeText] = useState(initial.resumeText);
   const [linkedinUrl, setLinkedinUrl] = useState(initial.linkedinUrl);
 
-  // Transient feedback state for the upload + scan flows
+  // Stored-resume metadata. Update locally after upload/delete so the UI
+  // reflects the new state without a full page reload.
+  const [resumePdfName, setResumePdfName] = useState(initial.resumePdfName);
+  const [resumePdfUploadedAt, setResumePdfUploadedAt] = useState(
+    initial.resumePdfUploadedAt,
+  );
+
   const [pdfStatus, setPdfStatus] = useState<{
     kind: "info" | "success" | "error";
     text: string;
   } | null>(null);
-  const [pdfParsing, setPdfParsing] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const [scanStatus, setScanStatus] = useState<{
     kind: "info" | "success" | "error";
@@ -47,28 +57,102 @@ export function SettingsForm({ initial }: { initial: Initial }) {
   async function handlePdfChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    setPdfBusy(true);
     setPdfStatus({ kind: "info", text: `Reading ${file.name}…` });
-    setPdfParsing(true);
+
     try {
-      const text = await parsePdfToText(file);
-      setResumeText(text);
-      setPdfStatus({
-        kind: "success",
-        text: `Extracted ${text.length.toLocaleString()} chars from ${file.name}. Review below and save.`,
-      });
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not signed in.");
+
+      const storagePath = `${user.id}/resume.pdf`;
+
+      // Parallel: parse text in the browser, upload PDF to Storage.
+      const [parseResult, uploadResult] = await Promise.allSettled([
+        parsePdfToText(file),
+        supabase.storage
+          .from("resumes")
+          .upload(storagePath, file, {
+            upsert: true,
+            contentType: "application/pdf",
+          }),
+      ]);
+
+      if (parseResult.status === "fulfilled") {
+        setResumeText(parseResult.value);
+      }
+
+      if (uploadResult.status === "rejected") {
+        throw new Error(uploadResult.reason?.message ?? "Upload failed.");
+      }
+      if (uploadResult.status === "fulfilled" && uploadResult.value.error) {
+        throw new Error(uploadResult.value.error.message);
+      }
+
+      // Persist the metadata server-side so it shows up on next reload too.
+      const metaResult = await recordResumeUpload(file.name);
+      if (metaResult.error) throw new Error(metaResult.error);
+
+      setResumePdfName(file.name);
+      setResumePdfUploadedAt(new Date().toISOString());
+
+      // Compose status — note both successes and any partial failure.
+      if (parseResult.status === "rejected") {
+        setPdfStatus({
+          kind: "info",
+          text: `Uploaded ${file.name}, but couldn't parse text. Paste it manually below.`,
+        });
+      } else {
+        setPdfStatus({
+          kind: "success",
+          text: `Uploaded ${file.name} and extracted ${parseResult.value.length.toLocaleString()} chars. Review and save.`,
+        });
+      }
     } catch (err) {
       setPdfStatus({
         kind: "error",
         text:
           err instanceof Error
             ? err.message
-            : "Couldn't parse this PDF. Try a different file or paste text manually.",
+            : "Couldn't process this PDF.",
       });
     } finally {
-      setPdfParsing(false);
-      // Allow re-uploading the same file
-      e.target.value = "";
+      setPdfBusy(false);
+      e.target.value = ""; // allow re-uploading the same file
     }
+  }
+
+  async function handleViewResume() {
+    const { url, error } = await getResumeDownloadUrl();
+    if (error || !url) {
+      setPdfStatus({
+        kind: "error",
+        text: error ?? "Couldn't generate a download link.",
+      });
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  async function handleDeleteResume() {
+    if (
+      !confirm("Delete the stored resume PDF? The text below is kept.")
+    ) {
+      return;
+    }
+    setPdfBusy(true);
+    const result = await deleteResume();
+    setPdfBusy(false);
+    if (result.error) {
+      setPdfStatus({ kind: "error", text: result.error });
+      return;
+    }
+    setResumePdfName(null);
+    setResumePdfUploadedAt(null);
+    setPdfStatus({ kind: "success", text: "Resume PDF removed." });
   }
 
   async function handleScan() {
@@ -95,8 +179,6 @@ export function SettingsForm({ initial }: { initial: Initial }) {
       updated++;
     }
     if (result.resumeText) {
-      // Only overwrite if currently empty — otherwise append a marker so
-      // user knows what's new.
       if (!resumeText.trim()) {
         setResumeText(result.resumeText);
       } else {
@@ -233,22 +315,55 @@ export function SettingsForm({ initial }: { initial: Initial }) {
           >
             Resume / detailed history
           </label>
-          <label className="cursor-pointer text-xs font-medium text-slate-700 hover:text-slate-900">
-            {pdfParsing ? "Reading…" : "Upload PDF"}
+          <label className="cursor-pointer rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
+            {pdfBusy ? "Working…" : resumePdfName ? "Replace PDF" : "Upload PDF"}
             <input
               type="file"
               accept="application/pdf"
               onChange={handlePdfChange}
-              disabled={pdfParsing}
+              disabled={pdfBusy}
               className="hidden"
             />
           </label>
         </div>
         <p className="mt-0.5 text-xs text-slate-500">
-          Upload your resume PDF (parsed in your browser — never leaves your
-          machine) or paste manually. The more specific, the more genuine
-          common ground Claude can surface.
+          PDF is uploaded to your private storage (encrypted; only you can
+          read it) AND parsed in your browser to populate the text below.
+          Keeping the file lets us attach it to outbound emails later.
         </p>
+
+        {resumePdfName && (
+          <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+            <div className="min-w-0">
+              <p className="truncate font-medium text-slate-900">
+                {resumePdfName}
+              </p>
+              {resumePdfUploadedAt && (
+                <p className="text-slate-500">
+                  Uploaded {new Date(resumePdfUploadedAt).toLocaleString()}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleViewResume}
+                className="font-medium text-slate-700 hover:text-slate-900"
+              >
+                View
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteResume}
+                disabled={pdfBusy}
+                className="font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        )}
+
         {pdfStatus && (
           <p
             className={`mt-2 text-xs ${
@@ -262,6 +377,7 @@ export function SettingsForm({ initial }: { initial: Initial }) {
             {pdfStatus.text}
           </p>
         )}
+
         <textarea
           id="resume_text"
           name="resume_text"

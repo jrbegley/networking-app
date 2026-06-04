@@ -16,10 +16,9 @@ export async function parsePdfToText(file: File): Promise<string> {
   // Dynamic import — only loads when the user actually clicks Upload PDF.
   const pdfjs = await import("pdfjs-dist");
 
-  // Worker is served from cdnjs (matches the installed version exactly via
-  // pdfjs.version). This avoids bundler-specific worker-loading magic and
-  // works in dev, Turbopack, webpack, and production Vercel builds alike.
-  pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
+  // Worker served from unpkg, which mirrors npm directly — so the version
+  // always matches the installed pdfjs-dist. cdnjs lags newer versions.
+  pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
   const buffer = await file.arrayBuffer();
   const pdf = await pdfjs.getDocument({ data: buffer }).promise;

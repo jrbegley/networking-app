@@ -12,7 +12,7 @@ export default async function SettingsPage() {
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "display_name, bio, resume_text, outreach_goal, linkedin_url",
+      "display_name, bio, resume_text, outreach_goal, linkedin_url, resume_pdf_name, resume_pdf_uploaded_at",
     )
     .eq("id", user?.id ?? "")
     .maybeSingle();
@@ -37,6 +37,8 @@ export default async function SettingsPage() {
             resumeText: profile?.resume_text ?? "",
             outreachGoal: profile?.outreach_goal ?? "",
             linkedinUrl: profile?.linkedin_url ?? "",
+            resumePdfName: profile?.resume_pdf_name ?? null,
+            resumePdfUploadedAt: profile?.resume_pdf_uploaded_at ?? null,
           }}
         />
       </div>
