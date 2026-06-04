@@ -176,29 +176,21 @@ function CompanyGroup({
 
 function ContactRow({ contact }: { contact: ContactRow }) {
   return (
-    <li className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-slate-50">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-slate-900">
-          {contact.name}
-        </p>
-        {contact.title && (
-          <p className="truncate text-xs text-slate-500">{contact.title}</p>
-        )}
-      </div>
-      <div className="flex items-center gap-3">
-        {contact.linkedin_url && (
-          <a
-            href={contact.linkedin_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-slate-500 hover:text-slate-900"
-            title="Open LinkedIn"
-          >
-            LinkedIn ↗
-          </a>
-        )}
+    <li>
+      <Link
+        href={`/contacts/${contact.id}`}
+        className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-slate-50"
+      >
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-slate-900">
+            {contact.name}
+          </p>
+          {contact.title && (
+            <p className="truncate text-xs text-slate-500">{contact.title}</p>
+          )}
+        </div>
         <StageBadge stage={contact.current_stage} />
-      </div>
+      </Link>
     </li>
   );
 }
