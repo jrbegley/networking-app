@@ -280,24 +280,34 @@ function ApolloDataBlock({
   fetchedAt: string;
 }) {
   const summary = summarizeApolloPayload(payload);
-
-  if (!summary) {
-    return (
-      <p className="mt-3 text-sm text-slate-500">
-        Apollo found no match for this LinkedIn URL (last checked{" "}
-        {new Date(fetchedAt).toLocaleDateString()}).
-      </p>
-    );
-  }
+  const fetchedDate = new Date(fetchedAt).toLocaleDateString();
 
   return (
     <div className="mt-3">
       <p className="text-xs uppercase tracking-wide text-slate-500">
-        Apollo · fetched {new Date(fetchedAt).toLocaleDateString()}
+        Apollo · fetched {fetchedDate}
       </p>
-      <pre className="mt-1 whitespace-pre-wrap rounded-md bg-slate-50 p-4 font-sans text-sm text-slate-800 ring-1 ring-slate-200">
-        {summary}
-      </pre>
+
+      {summary ? (
+        <pre className="mt-1 whitespace-pre-wrap rounded-md bg-slate-50 p-4 font-sans text-sm text-slate-800 ring-1 ring-slate-200">
+          {summary}
+        </pre>
+      ) : (
+        <p className="mt-1 text-sm text-slate-500">
+          Apollo found no match (last checked {fetchedDate}).
+        </p>
+      )}
+
+      {/* Always provide an escape hatch to the raw payload — useful for
+          debugging when the summarizer skips fields we didn't expect. */}
+      <details className="mt-2">
+        <summary className="cursor-pointer select-none text-xs text-slate-500 hover:text-slate-700">
+          Show raw Apollo payload (for debugging)
+        </summary>
+        <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-slate-900 p-3 text-xs leading-relaxed text-slate-100">
+          {JSON.stringify(payload, null, 2)}
+        </pre>
+      </details>
     </div>
   );
 }
