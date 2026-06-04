@@ -1,13 +1,16 @@
 /**
- * Tavily web search client. Free tier ships 1000 searches/month — much
- * more headroom than Apollo's free tier, and Tavily's "advanced" search
- * comes back with an LLM-generated answer plus the top web pages.
+ * Tavily client. Two endpoints we use:
+ *   - /search: web search with an LLM-generated answer
+ *   - /extract: direct content extraction from URLs (works on some public
+ *     profile pages, often blocked by LinkedIn's anti-bot — try anyway,
+ *     handle empty gracefully)
  *
- * We pair the answer (high-signal summary) with each result's snippet so
- * Claude has both a TL;DR and source-grounded facts.
+ * Free tier: 1000 calls/month combined.
  */
 
 const TAVILY_BASE = "https://api.tavily.com";
+
+// ── Search ─────────────────────────────────────────────────────────────
 
 export type TavilyResult = {
   title: string;
@@ -23,8 +26,15 @@ export type TavilySearchResponse = {
   response_time?: number;
 };
 
+export type TavilySearchOptions = {
+  includeDomains?: string[];
+  excludeDomains?: string[];
+  maxResults?: number;
+};
+
 export async function searchTavily(
   query: string,
+  opts: TavilySearchOptions = {},
 ): Promise<TavilySearchResponse> {
   const apiKey = process.env.TAVILY_API_KEY;
   if (!apiKey) throw new Error("TAVILY_API_KEY not set");
@@ -38,7 +48,9 @@ export async function searchTavily(
       search_depth: "advanced",
       include_answer: true,
       include_raw_content: false,
-      max_results: 5,
+      max_results: opts.maxResults ?? 5,
+      include_domains: opts.includeDomains ?? [],
+      exclude_domains: opts.excludeDomains ?? [],
     }),
     cache: "no-store",
   });
@@ -46,9 +58,60 @@ export async function searchTavily(
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `Tavily API ${res.status}: ${text.slice(0, 200) || res.statusText}`,
+      `Tavily search ${res.status}: ${text.slice(0, 200) || res.statusText}`,
     );
   }
 
   return (await res.json()) as TavilySearchResponse;
 }
+
+// ── Extract ────────────────────────────────────────────────────────────
+
+export type TavilyExtractResult = {
+  url: string;
+  raw_content: string;
+};
+
+export type TavilyExtractFailure = {
+  url: string;
+  error: string;
+};
+
+export type TavilyExtractResponse = {
+  results: TavilyExtractResult[];
+  failed_results: TavilyExtractFailure[];
+};
+
+export async function extractTavily(
+  urls: string[],
+): Promise<TavilyExtractResponse> {
+  const apiKey = process.env.TAVILY_API_KEY;
+  if (!apiKey) throw new Error("TAVILY_API_KEY not set");
+
+  const res = await fetch(`${TAVILY_BASE}/extract`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      api_key: apiKey,
+      urls,
+    }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `Tavily extract ${res.status}: ${text.slice(0, 200) || res.statusText}`,
+    );
+  }
+
+  return (await res.json()) as TavilyExtractResponse;
+}
+
+// ── Combined payload (what we persist as a research_artifact) ──────────
+
+export type TavilyResearchPayload = {
+  query: string;
+  search: TavilySearchResponse | null;
+  extract: TavilyExtractResponse | null;
+};

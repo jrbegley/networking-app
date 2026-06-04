@@ -2,7 +2,11 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { enrichPersonByLinkedInUrl } from "@/lib/apollo";
-import { searchTavily } from "@/lib/tavily";
+import {
+  searchTavily,
+  extractTavily,
+  type TavilyResearchPayload,
+} from "@/lib/tavily";
 import { isApolloShellResponse } from "@/lib/apollo-summary";
 import { draftOutreachEmail, type Draft } from "@/lib/claude";
 import { revalidatePath } from "next/cache";
@@ -220,7 +224,7 @@ export async function researchWithTavily(
   const { data: contact, error: contactErr } = await supabase
     .from("contacts")
     .select(
-      `id, name, title, current_stage,
+      `id, name, title, linkedin_url, current_stage,
        company:companies(name)`,
     )
     .eq("id", contactId)
@@ -264,21 +268,42 @@ export async function researchWithTavily(
     };
   }
 
-  // Build the query
-  const query = company?.name
-    ? `${contact.name} ${company.name}`
-    : contact.name;
+  // Build a targeted query. Just "Isaac Rice" matches dozens of people.
+  // Adding company + title disambiguates dramatically.
+  const queryParts = [contact.name];
+  if (contact.title) queryParts.push(contact.title);
+  if (company?.name) queryParts.push(company.name);
+  const query = queryParts.join(" ");
 
-  let response;
-  try {
-    response = await searchTavily(query);
-  } catch (e) {
+  // Run search + extract in parallel. Extract is best-effort — LinkedIn
+  // often blocks bots, but other public profile pages work.
+  const [searchSettled, extractSettled] = await Promise.allSettled([
+    searchTavily(query),
+    contact.linkedin_url
+      ? extractTavily([contact.linkedin_url])
+      : Promise.resolve(null),
+  ]);
+
+  const searchResult =
+    searchSettled.status === "fulfilled" ? searchSettled.value : null;
+  const extractResult =
+    extractSettled.status === "fulfilled" ? extractSettled.value : null;
+  const searchErr =
+    searchSettled.status === "rejected" ? String(searchSettled.reason) : null;
+
+  if (!searchResult && !extractResult) {
     return {
-      error: e instanceof Error ? e.message : "Tavily call failed.",
+      error: searchErr ?? "Tavily call failed.",
       cached: false,
       message: null,
     };
   }
+
+  const payload: TavilyResearchPayload = {
+    query,
+    search: searchResult,
+    extract: extractResult,
+  };
 
   const { error: artifactErr } = await supabase
     .from("research_artifacts")
@@ -286,7 +311,7 @@ export async function researchWithTavily(
       owner_id: user.id,
       contact_id: contactId,
       source: "tavily",
-      payload: response,
+      payload,
     });
   if (artifactErr) {
     return {
@@ -307,11 +332,22 @@ export async function researchWithTavily(
   revalidatePath(`/contacts/${contactId}`);
   revalidatePath("/contacts");
 
-  return {
-    error: null,
-    cached: false,
-    message: "Web research saved.",
-  };
+  // Compose a status message that reflects what actually came back
+  const extractCount = extractResult?.results?.length ?? 0;
+  const sourceCount = searchResult?.results?.length ?? 0;
+  const bits: string[] = [];
+  if (extractCount > 0) {
+    bits.push(`extracted ${extractCount} page${extractCount === 1 ? "" : "s"}`);
+  }
+  if (sourceCount > 0) {
+    bits.push(`${sourceCount} web source${sourceCount === 1 ? "" : "s"}`);
+  }
+  const msg =
+    bits.length > 0
+      ? `Saved: ${bits.join(", ")}.`
+      : "Saved. Tavily found no useful data.";
+
+  return { error: null, cached: false, message: msg };
 }
 
 // ── Research notes ─────────────────────────────────────────────────────
