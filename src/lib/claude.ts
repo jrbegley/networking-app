@@ -430,39 +430,51 @@ Rules:
   }
 }
 
-// ── Last name extraction from corporate emails ─────────────────────────
+// ── Last name inference from Apollo obfuscated names ──────────────────
 
 /**
- * Given a list of {firstName, email} pairs from Apollo search results,
- * returns the most likely last name for each person by parsing the email
- * local part. Handles common corporate patterns (first.last, flast,
- * lastf, last.first, first_last, etc.).
+ * Apollo's api_search free tier returns last names as e.g. "Gr***n" —
+ * first N chars shown, one asterisk per hidden char, last char shown.
  *
- * Sends one batched Claude call for the whole page — cheap and fast.
- * Returns null for entries where confidence is low.
+ * Given the obfuscated pattern + first name + company + title, Claude
+ * infers the single most likely last name. Batches the whole result page
+ * in one API call.
+ *
+ * Returns null per entry when confidence is too low to guess.
  */
-export async function parseLastNamesFromEmails(
-  people: Array<{ firstName: string; email: string }>,
+export async function inferLastNamesFromObfuscated(
+  people: Array<{
+    firstName: string;
+    lastNameObfuscated: string;
+    company: string;
+    title: string | null;
+  }>,
 ): Promise<Array<string | null>> {
   if (!people.length) return [];
 
-  const systemPrompt = `You extract last names from corporate email addresses. Given a person's first name and work email, return their likely last name.
+  const systemPrompt = `You infer likely last names from Apollo.io obfuscated name patterns.
 
-Common email patterns (local part before @):
-- first.last → last name is "last"
-- f.last or flast → last name is "last"
-- last.first or lastf → last name is "last"
-- first_last or first-last → last name is "last"
-- firstlast (concatenated) → use first name to split off last name
+The pattern format: first 1-2 characters shown, then asterisks (one per hidden character), then the last character shown.
+Examples:
+  "Gr***n" → 6-letter name, starts "Gr", ends "n" → e.g. "Graven", "Grogan"
+  "S**h"   → 4-letter name, starts "S",  ends "h" → e.g. "Shah", "Seth", "Such"
+  "Wi****s" → 7-letter name, starts "Wi", ends "s" → e.g. "Williams", "Winters"
+
+Use the person's first name, company, and title as demographic context to pick the single most plausible surname. Common names at the right company or in the right industry should rank higher.
 
 Rules:
-- Use the first name to help disambiguate ambiguous patterns
-- Capitalize correctly (Smith, McDonald, O'Brien)
-- If you genuinely cannot determine the last name with reasonable confidence, return null
-- Output ONLY a JSON array of strings or nulls, one per input, no prose`;
+- Return your single best guess only — do not return multiple options
+- Capitalize correctly (Smith, McDonald, O'Brien, DeVries)
+- Return null if the pattern is too ambiguous to make a reasonable guess
+- Output ONLY a JSON array of strings or nulls, one per input, no prose or explanation`;
 
   const userMessage = JSON.stringify(
-    people.map((p) => ({ firstName: p.firstName, email: p.email })),
+    people.map((p) => ({
+      firstName: p.firstName,
+      lastNameObfuscated: p.lastNameObfuscated,
+      company: p.company,
+      title: p.title,
+    })),
   );
 
   const response = await client.messages.create({

@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { searchPeople, type ApolloSearchPerson } from "@/lib/apollo";
-import { translateSearchQuery, parseLastNamesFromEmails } from "@/lib/claude";
+import { translateSearchQuery, inferLastNamesFromObfuscated } from "@/lib/claude";
 import { findLinkedInUrl } from "@/lib/tavily";
 import { revalidatePath } from "next/cache";
 
@@ -76,25 +76,28 @@ export async function searchApollo(
     };
   }
 
-  // Parse last names from emails via Claude (one batched call).
-  // Apollo free tier returns only first name + last initial, but the email
-  // local part usually contains the full last name. Mutate last_name in place
-  // so all downstream code (display, LinkedIn lookup, saved name) benefits.
-  const withEmail = searchData.people
-    .map((p, i) => ({ i, firstName: p.first_name ?? "", email: p.email ?? "" }))
-    .filter((x) => x.email && x.firstName);
+  // Infer last names from Apollo's obfuscated patterns (e.g. "Gr***n") via
+  // Claude. One batched call for the whole page. Mutates last_name in place
+  // so display, LinkedIn lookup, and saved contact name all benefit.
+  const withObfuscated = searchData.people
+    .map((p, i) => ({
+      i,
+      firstName: p.first_name ?? "",
+      lastNameObfuscated: p.last_name_obfuscated ?? "",
+      company: p.organization?.name ?? "",
+      title: p.title ?? null,
+    }))
+    .filter((x) => x.lastNameObfuscated && x.firstName);
 
-  if (withEmail.length > 0) {
+  if (withObfuscated.length > 0) {
     try {
-      const lastNames = await parseLastNamesFromEmails(
-        withEmail.map((x) => ({ firstName: x.firstName, email: x.email })),
-      );
-      withEmail.forEach((x, j) => {
+      const lastNames = await inferLastNamesFromObfuscated(withObfuscated);
+      withObfuscated.forEach((x, j) => {
         const ln = lastNames[j];
         if (ln) searchData.people[x.i].last_name = ln;
       });
     } catch {
-      // Non-fatal — proceed with whatever Apollo returned
+      // Non-fatal — proceed with partial names
     }
   }
 
@@ -160,11 +163,12 @@ export type AddContactsResult = {
 function buildName(person: ApolloSearchPerson): string {
   if (person.name) return person.name;
   const first = person.first_name ?? "";
-  const last = person.last_name ?? "";
-  if (!first && !last) return "Unknown";
-  const isInitial = last.replace(".", "").trim().length <= 1;
-  if (!last) return first;
-  return isInitial ? `${first} ${last.replace(".", "")}.` : `${first} ${last}`;
+  const last = person.last_name ?? "";           // inferred by Claude
+  const obfuscated = person.last_name_obfuscated ?? "";
+  if (!first) return "Unknown";
+  if (last) return `${first} ${last}`;
+  if (obfuscated) return `${first} ${obfuscated}`;
+  return first;
 }
 
 export async function addContactsFromSearch(
@@ -232,7 +236,6 @@ export async function addContactsFromSearch(
       owner_id: user.id,
       name: buildName(person),
       title: person.title ?? null,
-      email: person.email ?? null,
       linkedin_url: linkedinUrl,
       apollo_id: person.id ?? null,
       company_id: companyId,

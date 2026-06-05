@@ -58,10 +58,10 @@ export type ApolloSearchPerson = {
   id: string;
   name: string | null;
   first_name: string | null;
-  last_name: string | null;
+  last_name: string | null;           // populated after inference, null from API
+  last_name_obfuscated: string | null; // raw from API e.g. "Gr***n"
   title: string | null;
   linkedin_url: string | null;
-  email: string | null; // returned on free tier in search results
   city: string | null;
   state: string | null;
   country: string | null;
@@ -127,10 +127,10 @@ export async function searchPeople(
       id: (p.id as string) ?? "",
       name: (p.name as string | null) ?? null,
       first_name: (p.first_name as string | null) ?? null,
-      last_name: (p.last_name as string | null) ?? null,
+      last_name: null, // populated post-inference
+      last_name_obfuscated: (p.last_name_obfuscated as string | null) ?? null,
       title: (p.title as string | null) ?? null,
       linkedin_url: (p.linkedin_url as string | null) ?? null,
-      email: (p.email as string | null) ?? null,
       city: (p.city as string | null) ?? null,
       state: (p.state as string | null) ?? null,
       country: (p.country as string | null) ?? null,

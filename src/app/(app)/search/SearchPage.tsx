@@ -260,16 +260,14 @@ export function SearchPage() {
 }
 
 function formatName(person: SearchResult): string {
-  // Apollo free tier returns first_name + last_name (often just an initial).
-  // Prefer the full `name` field if present, otherwise build from parts,
-  // appending last initial with a dot for clarity.
   if (person.name) return person.name;
   const first = person.first_name ?? "";
-  const last = person.last_name ?? "";
-  if (!first && !last) return "Unknown";
-  const isInitial = last.replace(".", "").trim().length <= 1;
-  if (!last) return first;
-  return isInitial ? `${first} ${last.replace(".", "")}.` : `${first} ${last}`;
+  const last = person.last_name ?? "";           // inferred by Claude
+  const obfuscated = person.last_name_obfuscated ?? ""; // fallback display
+  if (!first) return "Unknown";
+  if (last) return `${first} ${last}`;
+  if (obfuscated) return `${first} ${obfuscated}`;
+  return first;
 }
 
 function PersonRow({
