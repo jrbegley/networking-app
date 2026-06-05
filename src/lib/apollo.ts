@@ -61,12 +61,11 @@ export type ApolloSearchPerson = {
   last_name: string | null;
   title: string | null;
   linkedin_url: string | null;
+  email: string | null; // returned on free tier in search results
   city: string | null;
   state: string | null;
   country: string | null;
   organization: { name: string | null; primary_domain: string | null } | null;
-  // email is only populated if the user has reveal credits; omit from type
-  // to avoid confusion — use enrichPersonByLinkedInUrl for that.
 };
 
 export type ApolloSearchResponse = {
@@ -118,16 +117,26 @@ export async function searchPeople(
   }
 
   const data = await res.json();
-  // Log the first result's keys in dev so we can see the actual response shape
-  if (process.env.NODE_ENV !== "production" && data.people?.length) {
-    console.log("[Apollo api_search] first person keys:", Object.keys(data.people[0]));
-    console.log("[Apollo api_search] first person sample:", JSON.stringify(data.people[0], null, 2));
-  } else if (data.people?.length) {
-    console.log("[Apollo api_search] first person keys:", Object.keys(data.people[0]));
-  }
 
   return {
-    people: (data.people ?? []) as ApolloSearchPerson[],
+    people: ((data.people ?? []) as Record<string, unknown>[]).map((p) => ({
+      id: (p.id as string) ?? "",
+      name: (p.name as string | null) ?? null,
+      first_name: (p.first_name as string | null) ?? null,
+      last_name: (p.last_name as string | null) ?? null,
+      title: (p.title as string | null) ?? null,
+      linkedin_url: (p.linkedin_url as string | null) ?? null,
+      email: (p.email as string | null) ?? null,
+      city: (p.city as string | null) ?? null,
+      state: (p.state as string | null) ?? null,
+      country: (p.country as string | null) ?? null,
+      organization: p.organization
+        ? {
+            name: ((p.organization as Record<string, unknown>).name as string | null) ?? null,
+            primary_domain: ((p.organization as Record<string, unknown>).primary_domain as string | null) ?? null,
+          }
+        : null,
+    })) as ApolloSearchPerson[],
     pagination: data.pagination ?? {
       page,
       per_page: perPage,

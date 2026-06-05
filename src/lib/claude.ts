@@ -429,3 +429,63 @@ Rules:
     return { q_keywords: query };
   }
 }
+
+// ── Last name extraction from corporate emails ─────────────────────────
+
+/**
+ * Given a list of {firstName, email} pairs from Apollo search results,
+ * returns the most likely last name for each person by parsing the email
+ * local part. Handles common corporate patterns (first.last, flast,
+ * lastf, last.first, first_last, etc.).
+ *
+ * Sends one batched Claude call for the whole page — cheap and fast.
+ * Returns null for entries where confidence is low.
+ */
+export async function parseLastNamesFromEmails(
+  people: Array<{ firstName: string; email: string }>,
+): Promise<Array<string | null>> {
+  if (!people.length) return [];
+
+  const systemPrompt = `You extract last names from corporate email addresses. Given a person's first name and work email, return their likely last name.
+
+Common email patterns (local part before @):
+- first.last → last name is "last"
+- f.last or flast → last name is "last"
+- last.first or lastf → last name is "last"
+- first_last or first-last → last name is "last"
+- firstlast (concatenated) → use first name to split off last name
+
+Rules:
+- Use the first name to help disambiguate ambiguous patterns
+- Capitalize correctly (Smith, McDonald, O'Brien)
+- If you genuinely cannot determine the last name with reasonable confidence, return null
+- Output ONLY a JSON array of strings or nulls, one per input, no prose`;
+
+  const userMessage = JSON.stringify(
+    people.map((p) => ({ firstName: p.firstName, email: p.email })),
+  );
+
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 300,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userMessage }],
+  });
+
+  const text = response.content
+    .filter((c): c is Anthropic.TextBlock => c.type === "text")
+    .map((c) => c.text)
+    .join("")
+    .trim();
+
+  try {
+    const clean = text.replace(/^```json?\s*/i, "").replace(/```\s*$/i, "").trim();
+    const parsed = JSON.parse(clean);
+    if (Array.isArray(parsed) && parsed.length === people.length) {
+      return parsed.map((v) => (typeof v === "string" && v.trim() ? v.trim() : null));
+    }
+  } catch {
+    // fall through
+  }
+  return people.map(() => null);
+}

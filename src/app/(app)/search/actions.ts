@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { searchPeople, type ApolloSearchPerson } from "@/lib/apollo";
-import { translateSearchQuery } from "@/lib/claude";
+import { translateSearchQuery, parseLastNamesFromEmails } from "@/lib/claude";
 import { findLinkedInUrl } from "@/lib/tavily";
 import { revalidatePath } from "next/cache";
 
@@ -74,6 +74,28 @@ export async function searchApollo(
       filtersUsed: filters,
       error: `Apollo search failed: ${e instanceof Error ? e.message : "unknown error"}`,
     };
+  }
+
+  // Parse last names from emails via Claude (one batched call).
+  // Apollo free tier returns only first name + last initial, but the email
+  // local part usually contains the full last name. Mutate last_name in place
+  // so all downstream code (display, LinkedIn lookup, saved name) benefits.
+  const withEmail = searchData.people
+    .map((p, i) => ({ i, firstName: p.first_name ?? "", email: p.email ?? "" }))
+    .filter((x) => x.email && x.firstName);
+
+  if (withEmail.length > 0) {
+    try {
+      const lastNames = await parseLastNamesFromEmails(
+        withEmail.map((x) => ({ firstName: x.firstName, email: x.email })),
+      );
+      withEmail.forEach((x, j) => {
+        const ln = lastNames[j];
+        if (ln) searchData.people[x.i].last_name = ln;
+      });
+    } catch {
+      // Non-fatal — proceed with whatever Apollo returned
+    }
   }
 
   // Check which Apollo IDs / LinkedIn URLs are already in the pipeline
@@ -210,6 +232,7 @@ export async function addContactsFromSearch(
       owner_id: user.id,
       name: buildName(person),
       title: person.title ?? null,
+      email: person.email ?? null,
       linkedin_url: linkedinUrl,
       apollo_id: person.id ?? null,
       company_id: companyId,
