@@ -21,9 +21,15 @@ export type RecordResumeState = {
  * Called right after a client-side resume upload to Supabase Storage
  * succeeds. Updates the profile with the filename and timestamp so the
  * settings UI can show "Current resume: <name>".
+ *
+ * Also persists the parsed resume text when provided, so the user doesn't
+ * have to remember to hit Save separately — otherwise the PDF metadata
+ * saves but the actual text the drafter needs is left only in the textarea
+ * and never reaches the DB.
  */
 export async function recordResumeUpload(
   filename: string,
+  resumeText?: string,
 ): Promise<RecordResumeState> {
   const supabase = await createClient();
   const {
@@ -31,12 +37,19 @@ export async function recordResumeUpload(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not signed in.", saved: false };
 
+  const update: Record<string, unknown> = {
+    resume_pdf_name: filename,
+    resume_pdf_uploaded_at: new Date().toISOString(),
+  };
+  // Only overwrite resume_text when we actually parsed something — a failed
+  // parse shouldn't wipe text the user already had.
+  if (resumeText && resumeText.trim()) {
+    update.resume_text = resumeText.trim();
+  }
+
   const { error } = await supabase
     .from("profiles")
-    .update({
-      resume_pdf_name: filename,
-      resume_pdf_uploaded_at: new Date().toISOString(),
-    })
+    .update(update)
     .eq("id", user.id);
 
   if (error) return { error: error.message, saved: false };

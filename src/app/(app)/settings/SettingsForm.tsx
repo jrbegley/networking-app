@@ -81,8 +81,10 @@ export function SettingsForm({ initial }: { initial: Initial }) {
           }),
       ]);
 
-      if (parseResult.status === "fulfilled") {
-        setResumeText(parseResult.value);
+      const parsedText =
+        parseResult.status === "fulfilled" ? parseResult.value : null;
+      if (parsedText) {
+        setResumeText(parsedText);
       }
 
       if (uploadResult.status === "rejected") {
@@ -92,23 +94,24 @@ export function SettingsForm({ initial }: { initial: Initial }) {
         throw new Error(uploadResult.value.error.message);
       }
 
-      // Persist the metadata server-side so it shows up on next reload too.
-      const metaResult = await recordResumeUpload(file.name);
+      // Persist filename AND the parsed text server-side immediately, so the
+      // resume reaches the drafter even if the user never clicks Save.
+      const metaResult = await recordResumeUpload(file.name, parsedText ?? undefined);
       if (metaResult.error) throw new Error(metaResult.error);
 
       setResumePdfName(file.name);
       setResumePdfUploadedAt(new Date().toISOString());
 
       // Compose status — note both successes and any partial failure.
-      if (parseResult.status === "rejected") {
+      if (!parsedText) {
         setPdfStatus({
           kind: "info",
-          text: `Uploaded ${file.name}, but couldn't parse text. Paste it manually below.`,
+          text: `Uploaded ${file.name}, but couldn't parse text. Paste it manually below, then Save.`,
         });
       } else {
         setPdfStatus({
           kind: "success",
-          text: `Uploaded ${file.name} and extracted ${parseResult.value.length.toLocaleString()} chars. Review and save.`,
+          text: `Uploaded ${file.name} and saved ${parsedText.length.toLocaleString()} chars of resume text. Edit below and Save if you want to tweak it.`,
         });
       }
     } catch (err) {

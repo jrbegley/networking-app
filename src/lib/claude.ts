@@ -202,7 +202,7 @@ Before producing the final output:
 4. 90–150 words. Enough for substance; not so long it becomes an essay.
 5. Start mid-thought — a fact, an observation, a question — not with "My name is" or "I am a."
 6. Drop the sender's credentials in passing, in one or two clauses. Not a formal introduction paragraph.
-7. One ask. Phrase it as a real request with a time frame: "Would you have 20 minutes sometime in the next few weeks?" Not a throwaway like "Worth a call?"
+7. One ask, and it must serve the sender's OUTREACH GOAL (in the sender profile). If the goal is "PM internships at fintech startups," the email should be angled toward that, and the ask should move the sender toward it. Do not write a generic "I'd love to learn about your work" email that ignores why the sender is actually reaching out. Phrase the ask as a real request with a time frame: "Would you have 20 minutes sometime in the next few weeks?" Not a throwaway like "Worth a call?" If no outreach goal is provided, default to a short informational call.
 8. No sign-off. The email client appends the signature.
 9. Subject line: specific, under 8 words, no puns, no "Quick question."
 
