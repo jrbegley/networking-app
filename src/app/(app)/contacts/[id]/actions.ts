@@ -5,7 +5,6 @@ import { enrichPersonByLinkedInUrl } from "@/lib/apollo";
 import {
   searchTavily,
   extractTavily,
-  TAVILY_ENABLED,
   type TavilyResearchPayload,
   type TavilyNamedSearch,
 } from "@/lib/tavily";
@@ -713,8 +712,10 @@ export async function draftEmail(
     return { error: "Not signed in.", draft: null };
   }
 
-  // Parallel fetches: contact, latest LinkedIn, Apollo, Tavily, sender profile
-  const [contactRes, linkedinRes, apolloRes, tavilyRes, profileRes] =
+  // Parallel fetches: contact, latest LinkedIn, Apollo, sender profile.
+  // Tavily is intentionally NOT fed into the draft right now — its firm
+  // research was producing hallucinated specifics in the email body.
+  const [contactRes, linkedinRes, apolloRes, profileRes] =
     await Promise.all([
     supabase
       .from("contacts")
@@ -740,16 +741,6 @@ export async function draftEmail(
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
-    TAVILY_ENABLED
-      ? supabase
-          .from("research_artifacts")
-          .select("payload")
-          .eq("contact_id", contactId)
-          .eq("source", "tavily")
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle()
-      : Promise.resolve({ data: null as null }),
     supabase
       .from("profiles")
       .select("bio, resume_text, outreach_goal, linkedin_url")
@@ -770,7 +761,6 @@ export async function draftEmail(
 
   const latestLinkedin = linkedinRes.data;
   const latestApollo = apolloRes.data;
-  const latestTavily = tavilyRes.data;
   const profile = profileRes.data;
 
   const company = Array.isArray(contact.company)
@@ -788,7 +778,7 @@ export async function draftEmail(
       linkedinUrl: contact.linkedin_url,
       linkedinPayload: latestLinkedin?.payload ?? null,
       apolloPayload: latestApollo?.payload ?? null,
-      tavilyPayload: latestTavily?.payload ?? null,
+      tavilyPayload: null,
       userNotes: contact.notes,
       researchNotes: contact.research_notes ?? null,
       sender: {
