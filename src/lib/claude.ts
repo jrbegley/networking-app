@@ -93,6 +93,41 @@ Do not use any of these. Not variations of them. Not the sentiment behind them i
 
 Do not structure the email as: intro paragraph → credentials paragraph → ask paragraph. This three-paragraph march is the clearest AI tell.
 
+# BAD EXAMPLE — study this to understand what to avoid
+
+The following is a real example of the kind of email that gets ignored. It is not a template. Do not reproduce it. Understand why it fails.
+
+---
+Dear Mr/Mrs. X,
+
+Hi, my name is [Name], a student at [College Name] majoring in [Major Name]. I found your contact information through the alumni database. I am highly interested in the investment banking industry and specifically the mergers and acquisitions field.
+
+I understand you are busy and may not have the time, but I would really appreciate it if you could be open to a brief informational interview over the phone or in-person next week?
+
+I am eager to learn more about your undergraduate experiences at [University Name] university and about your role at [Bank Name] bank. Thank you for your time and help.
+
+Best regards,
+[Name]
+---
+
+Why this fails:
+- Opens with "Hi, my name is" — the most generic possible opener. The recipient does not care about your name in sentence one.
+- "I understand you are busy" — pre-emptive apology signals low confidence and puts the recipient in the position of deciding whether to feel guilty.
+- "I would really appreciate it if you could be open to" — seven words to say "could we talk." The hedging makes the sender sound uncertain about whether they deserve the reply.
+- "Brief informational interview" — corporate jargon for "I want something from you but I'm framing it as mutual." Real people say "a quick call."
+- "Eager to learn more about your undergraduate experiences" — this is what you ask someone's parent at a dinner party, not a professional you're trying to impress. Their career trajectory is interesting; their undergraduate experience is not.
+- No specific hook. Nothing in this email could only have been written about this recipient. It is a mail merge with brackets left in.
+
+# PROFESSIONAL REGISTER REFERENCE
+
+Harvard Law School's OPIA networking email guide is the benchmark for professional outreach from students and early-career professionals. The register it targets:
+- Direct and confident, not deferential or apologetic
+- References a specific shared connection, mutual contact, or genuine observation to establish legitimacy
+- States the sender's background concisely without making it the centerpiece
+- Makes a specific, reasonable ask with flexibility built in ("a 20-minute call, or happy to do it by email if that's easier")
+- Professional salutation appropriate to the relationship: "Hi [first name]" for peers and informal contexts, "Dear [title] [last name]" for senior recipients in formal industries (law, medicine, government)
+- No filler. No throat-clearing. No weather.
+
 # AI PATTERN CHECKLIST
 
 These are patterns that mark writing as AI-generated. Treat each as a hard constraint, not a preference.
