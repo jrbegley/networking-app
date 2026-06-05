@@ -961,6 +961,59 @@ export async function sendToOutlookDrafts(
   return { error: null, webLink: result.webLink };
 }
 
+// ── Log received email ────────────────────────────────────────────────
+
+export type LogEmailResult = { error: string | null };
+
+/**
+ * Manually log an inbound email from the contact. Used before automated
+ * reply detection is wired up. Also advances stage to 'replied' if currently
+ * at 'sent'.
+ */
+export async function logReceivedEmail(
+  contactId: string,
+  subject: string,
+  body: string,
+): Promise<LogEmailResult> {
+  if (!contactId) return { error: "Missing contact id." };
+  if (!body.trim()) return { error: "Body is required." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  const { error } = await supabase.from("interactions").insert({
+    owner_id: user.id,
+    contact_id: contactId,
+    type: "email_received",
+    subject: subject.trim() || null,
+    body: body.trim(),
+    occurred_at: new Date().toISOString(),
+  });
+
+  if (error) return { error: error.message };
+
+  // Auto-advance sent -> replied
+  const { data: contact } = await supabase
+    .from("contacts")
+    .select("current_stage")
+    .eq("id", contactId)
+    .maybeSingle();
+
+  if (contact?.current_stage === "sent") {
+    await supabase
+      .from("contacts")
+      .update({ current_stage: "replied" })
+      .eq("id", contactId);
+  }
+
+  revalidatePath(`/contacts/${contactId}`);
+  revalidatePath("/contacts");
+  return { error: null };
+}
+
 /** Save a manually edited draft (subject + body) as the contact's current draft. */
 export async function saveDraftForContact(
   contactId: string,

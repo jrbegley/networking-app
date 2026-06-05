@@ -14,6 +14,7 @@ import {
 import { TavilyButton } from "./TavilyButton";
 import { LinkedInButton } from "./LinkedInButton";
 import { DraftPanel } from "./DraftPanel";
+import { EmailThread } from "./EmailThread";
 import { ResearchNotes } from "./ResearchNotes";
 import { EditContact } from "./EditContact";
 import { summarizeTavilyPayload } from "@/lib/tavily-summary";
@@ -286,35 +287,11 @@ export default async function ContactDetailPage({ params }: PageProps) {
         </section>
       )}
 
-      {/* ── Timeline ────────────────────────────────────────────────── */}
-      <section className="rounded-lg bg-white p-6 ring-1 ring-slate-200">
-        <h2 className="text-base font-semibold text-slate-900">Timeline</h2>
-        {interactions && interactions.length > 0 ? (
-          <ul className="mt-3 divide-y divide-slate-100">
-            {interactions.map((i) => (
-              <li key={i.id} className="py-3">
-                <p className="text-xs text-slate-500">
-                  {new Date(i.occurred_at).toLocaleString()} · {i.type}
-                </p>
-                {i.subject && (
-                  <p className="mt-1 text-sm font-medium text-slate-900">
-                    {i.subject}
-                  </p>
-                )}
-                {i.body && (
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">
-                    {i.body}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-2 text-sm text-slate-500">
-            No interactions yet. Drafts and meeting notes will show up here.
-          </p>
-        )}
-      </section>
+      {/* ── Email thread ─────────────────────────────────────────────── */}
+      <EmailThread
+        contactId={contact.id}
+        interactions={interactions ?? []}
+      />
     </div>
   );
 }
