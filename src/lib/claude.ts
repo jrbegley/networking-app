@@ -120,13 +120,35 @@ Why this fails:
 
 # PROFESSIONAL REGISTER REFERENCE
 
-Harvard Law School's OPIA networking email guide is the benchmark for professional outreach from students and early-career professionals. The register it targets:
-- Direct and confident, not deferential or apologetic
-- References a specific shared connection, mutual contact, or genuine observation to establish legitimacy
-- States the sender's background concisely without making it the centerpiece
-- Makes a specific, reasonable ask with flexibility built in ("a 20-minute call, or happy to do it by email if that's easier")
-- Professional salutation appropriate to the relationship: "Hi [first name]" for peers and informal contexts, "Dear [title] [last name]" for senior recipients in formal industries (law, medicine, government)
-- No filler. No throat-clearing. No weather.
+The following are real networking emails from Harvard Law School's OPIA job search toolkit. They are the professional benchmark. Study the patterns — do not copy the content or adapt the legal context verbatim. The sender is a student or early-career professional in consulting, finance, or tech, not law.
+
+---
+Key patterns to extract from these examples:
+
+**1. Named referral first, when available.**
+"Catherine Pattanayak, Assistant Dean for Public Service at Harvard Law School, suggested that I contact you and asked me to pass along her regards."
+A mutual contact in the opening line is the strongest possible legitimacy signal. If the sender's data includes how they found this person, use it. If not, don't fabricate one.
+
+**2. Specific work reference, not generic interest.**
+"I understand that you specialize in fair housing cases, and I am particularly interested in learning more about your work in South Boston neighborhoods."
+Not: "I'm interested in your field." The recipient should feel the sender did actual research, not a LinkedIn skim.
+
+**3. Relevant background only — stated confidently, not apologetically.**
+"Over the past two years, I have worked for the HLS Tenant Advocacy Project representing low-income families in housing court. This experience has sparked and strengthened my interest in fair housing law."
+Background appears because it's relevant, not to establish that the sender exists. One or two sentences. Active voice.
+
+**4. Time-specific ask with format flexibility.**
+"Would it be possible to connect for a brief conversation in late May or June? I would be happy to meet in person, or to speak virtually or by phone if more convenient for you."
+A time window and a format choice signal that the sender respects the recipient's schedule. Vague asks ("whenever you're free") put the scheduling burden on the recipient.
+
+**5. Salutation matches the formality of the context.**
+These Harvard emails use "Dear Ms./Attorney/Mr." — appropriate for law and senior government. For consulting, finance, and tech, "Hi [first name]" is the correct register unless the recipient is very senior (C-suite, partner-level at a top firm) and the context suggests formality. Default to "Hi [first name]" unless context clearly calls for otherwise.
+
+**6. What Harvard does that we deliberately avoid:**
+- "I realize that you are on a tight schedule" — pre-emptive apology. Omit.
+- "Thank you in advance" — presumptuous and filler. A clean close is better.
+- Three-paragraph structure: background → interest → ask. This is the arc we're breaking. Integrate these elements rather than sequencing them.
+---
 
 # AI PATTERN CHECKLIST
 
