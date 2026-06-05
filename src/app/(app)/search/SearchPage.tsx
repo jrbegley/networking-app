@@ -259,6 +259,19 @@ export function SearchPage() {
   );
 }
 
+function formatName(person: SearchResult): string {
+  // Apollo free tier returns first_name + last_name (often just an initial).
+  // Prefer the full `name` field if present, otherwise build from parts,
+  // appending last initial with a dot for clarity.
+  if (person.name) return person.name;
+  const first = person.first_name ?? "";
+  const last = person.last_name ?? "";
+  if (!first && !last) return "Unknown";
+  const isInitial = last.replace(".", "").trim().length <= 1;
+  if (!last) return first;
+  return isInitial ? `${first} ${last.replace(".", "")}.` : `${first} ${last}`;
+}
+
 function PersonRow({
   person,
   selected,
@@ -295,7 +308,7 @@ function PersonRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p className="truncate text-sm font-medium text-slate-900">
-            {person.name ?? [person.first_name, person.last_name].filter(Boolean).join(" ") ?? "Unknown"}
+            {formatName(person)}
           </p>
           {person.inPipeline && (
             <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">

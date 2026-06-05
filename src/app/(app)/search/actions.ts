@@ -135,6 +135,16 @@ export type AddContactsResult = {
  * Add one or more Apollo search results directly to the pipeline as
  * 'identified' contacts. Skips any that are already in the pipeline.
  */
+function buildName(person: ApolloSearchPerson): string {
+  if (person.name) return person.name;
+  const first = person.first_name ?? "";
+  const last = person.last_name ?? "";
+  if (!first && !last) return "Unknown";
+  const isInitial = last.replace(".", "").trim().length <= 1;
+  if (!last) return first;
+  return isInitial ? `${first} ${last.replace(".", "")}.` : `${first} ${last}`;
+}
+
 export async function addContactsFromSearch(
   people: ApolloSearchPerson[],
 ): Promise<AddContactsResult> {
@@ -198,7 +208,7 @@ export async function addContactsFromSearch(
 
     const { error } = await supabase.from("contacts").insert({
       owner_id: user.id,
-      name: person.name ?? [person.first_name, person.last_name].filter(Boolean).join(" ") ?? "Unknown",
+      name: buildName(person),
       title: person.title ?? null,
       linkedin_url: linkedinUrl,
       apollo_id: person.id ?? null,

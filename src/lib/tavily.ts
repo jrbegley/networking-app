@@ -140,14 +140,16 @@ export async function extractTavily(
  */
 export async function findLinkedInUrl(opts: {
   firstName: string;
-  lastName: string; // may be just an initial e.g. "S"
+  lastName: string; // may be just an initial — we skip it if so
   company: string;
   title?: string | null;
 }): Promise<string | null> {
   const { firstName, lastName, company, title } = opts;
 
-  // Build a targeted query. Title helps disambiguate common names at large firms.
-  const namePart = `"${firstName} ${lastName}"`;
+  // Skip the last name if it's just an initial (single char, with or without
+  // a dot) — it hurts more than it helps and causes false matches.
+  const isInitialOnly = lastName.replace(".", "").trim().length <= 1;
+  const namePart = isInitialOnly ? `"${firstName}"` : `"${firstName} ${lastName}"`;
   const titlePart = title ? ` "${title}"` : "";
   const query = `site:linkedin.com/in ${namePart} "${company}"${titlePart}`;
 
