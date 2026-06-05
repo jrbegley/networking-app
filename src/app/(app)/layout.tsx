@@ -31,23 +31,17 @@ export default async function AppLayout({
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-6">
             <Link
-              href="/dashboard"
+              href="/contacts"
               className="text-lg font-semibold text-slate-900"
             >
               Networking App
             </Link>
             <nav className="flex items-center gap-4 text-sm">
               <Link
-                href="/dashboard"
-                className="text-slate-600 hover:text-slate-900"
-              >
-                Dashboard
-              </Link>
-              <Link
                 href="/contacts"
                 className="text-slate-600 hover:text-slate-900"
               >
-                Contacts
+                Pipeline
               </Link>
               <Link
                 href="/settings"
