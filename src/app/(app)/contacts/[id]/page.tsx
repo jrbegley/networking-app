@@ -82,6 +82,19 @@ export default async function ContactDetailPage({ params }: PageProps) {
       : Promise.resolve({ data: null as null }),
   ]);
 
+  // Check if Outlook is connected for this user
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: profile } = user
+    ? await supabase
+        .from("profiles")
+        .select("outlook_email, outlook_access_token")
+        .eq("id", user.id)
+        .maybeSingle()
+    : { data: null };
+  const outlookConnected = !!(profile?.outlook_access_token);
+
   // Interactions timeline
   const { data: interactions } = await supabase
     .from("interactions")
@@ -217,6 +230,7 @@ export default async function ContactDetailPage({ params }: PageProps) {
         hasResearch={!!latestLinkedin || (TAVILY_ENABLED && !!latestTavily)}
         initialSubject={contact.draft_subject ?? ""}
         initialBody={contact.draft_body ?? ""}
+        outlookConnected={outlookConnected}
       />
 
       {/* ── Company panel ───────────────────────────────────────────── */}

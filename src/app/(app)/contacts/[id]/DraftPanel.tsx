@@ -5,6 +5,7 @@ import {
   generateDraftForContact,
   refineDraftForContact,
   saveDraftForContact,
+  sendToOutlookDrafts,
 } from "./actions";
 import type { Draft } from "@/lib/claude";
 
@@ -21,11 +22,13 @@ export function DraftPanel({
   hasResearch,
   initialSubject,
   initialBody,
+  outlookConnected,
 }: {
   contactId: string;
   hasResearch: boolean;
   initialSubject: string;
   initialBody: string;
+  outlookConnected: boolean;
 }) {
   const [subject, setSubject] = useState(initialSubject);
   const [body, setBody] = useState(initialBody);
@@ -39,7 +42,8 @@ export function DraftPanel({
 
   const [usage, setUsage] = useState<Usage | null>(null);
   const [status, setStatus] = useState<Status>(null);
-  const [busy, setBusy] = useState<null | "generate" | "refine" | "save">(null);
+  const [busy, setBusy] = useState<null | "generate" | "refine" | "save" | "outlook">(null);
+  const [outlookLink, setOutlookLink] = useState<string | null>(null);
 
   const hasDraft = body.trim().length > 0;
   const dirty = subject !== savedSubject || body !== savedBody;
@@ -106,6 +110,23 @@ export function DraftPanel({
       setHistory((h) => [...h, trimmed]);
       setInstruction("");
       setStatus({ kind: "success", text: "Revised by Claude." });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleOutlook() {
+    if (!subject.trim() && !body.trim()) return;
+    setBusy("outlook");
+    setStatus(null);
+    try {
+      const r = await sendToOutlookDrafts(contactId, subject, body);
+      if (r.error) {
+        setStatus({ kind: "error", text: r.error });
+        return;
+      }
+      setOutlookLink(r.webLink);
+      setStatus({ kind: "success", text: "Saved to Outlook Drafts." });
     } finally {
       setBusy(null);
     }
@@ -214,6 +235,33 @@ export function DraftPanel({
               >
                 Copy
               </button>
+              {outlookConnected ? (
+                <button
+                  type="button"
+                  onClick={handleOutlook}
+                  disabled={busy !== null}
+                  className="rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {busy === "outlook" ? "Sending…" : "→ Outlook Drafts"}
+                </button>
+              ) : (
+                <a
+                  href="/settings"
+                  className="rounded-md px-3 py-1.5 text-sm text-slate-400 hover:text-slate-600"
+                >
+                  Connect Outlook to send
+                </a>
+              )}
+              {outlookLink && (
+                <a
+                  href={outlookLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  Open in Outlook ↗
+                </a>
+              )}
               {dirty && (
                 <span className="text-xs text-amber-600">Unsaved changes</span>
               )}

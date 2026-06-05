@@ -17,6 +17,7 @@ import {
   type DraftContext,
 } from "@/lib/claude";
 import { revalidatePath } from "next/cache";
+import { createOutlookDraft } from "@/lib/graph";
 
 // NB: maxDuration lives on page.tsx — server-action files can only export
 // async functions, not constants.
@@ -892,6 +893,72 @@ export async function refineDraftForContact(
   revalidatePath(`/contacts/${contactId}`);
 
   return { error: null, draft };
+}
+
+// ── Outlook send ──────────────────────────────────────────────────────
+
+export type OutlookDraftResult = {
+  error: string | null;
+  webLink: string | null;
+};
+
+/**
+ * Push the contact's current draft into the connected Outlook Drafts folder
+ * via Microsoft Graph. Does NOT send — the user reviews and sends from
+ * Outlook. Logs an interaction row and advances the stage to 'sent' only
+ * after the user actually sends (not tracked yet; for now we advance to
+ * 'drafted' already; stage advancement here is intentionally deferred).
+ */
+export async function sendToOutlookDrafts(
+  contactId: string,
+  subject: string,
+  body: string,
+): Promise<OutlookDraftResult> {
+  if (!contactId) return { error: "Missing contact id.", webLink: null };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in.", webLink: null };
+
+  // Load contact to get recipient info
+  const { data: contact, error: contactErr } = await supabase
+    .from("contacts")
+    .select("name, email")
+    .eq("id", contactId)
+    .maybeSingle();
+
+  if (contactErr || !contact) {
+    return { error: "Couldn't load contact.", webLink: null };
+  }
+  if (!contact.email) {
+    return {
+      error: "This contact has no email address. Add one before sending.",
+      webLink: null,
+    };
+  }
+
+  const result = await createOutlookDraft(user.id, subject, body, {
+    name: contact.name,
+    email: contact.email,
+  });
+
+  if (result.error) return { error: result.error, webLink: null };
+
+  // Log an interaction row so the timeline knows a draft was pushed
+  await supabase.from("interactions").insert({
+    owner_id: user.id,
+    contact_id: contactId,
+    type: "email_sent",
+    subject,
+    body,
+    outlook_message_id: result.messageId ?? null,
+    occurred_at: new Date().toISOString(),
+  });
+
+  revalidatePath(`/contacts/${contactId}`);
+  return { error: null, webLink: result.webLink };
 }
 
 /** Save a manually edited draft (subject + body) as the contact's current draft. */

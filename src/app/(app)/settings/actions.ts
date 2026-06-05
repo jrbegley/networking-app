@@ -6,6 +6,7 @@ import {
   enrichPersonByLinkedInUrl,
   type ApolloPerson,
 } from "@/lib/apollo";
+import { disconnectOutlook } from "@/lib/graph";
 
 export type ProfileFormState = {
   error: string | null;
@@ -269,4 +270,27 @@ function buildResumeFromApollo(p: ApolloPerson): string | null {
   }
 
   return lines.length > 0 ? lines.join("\n") : null;
+}
+
+// ── Outlook disconnect ─────────────────────────────────────────────────
+
+export type DisconnectOutlookResult = {
+  error: string | null;
+};
+
+export async function disconnectOutlookAction(): Promise<DisconnectOutlookResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  try {
+    await disconnectOutlook(user.id);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Disconnect failed." };
+  }
+
+  revalidatePath("/settings");
+  return { error: null };
 }
