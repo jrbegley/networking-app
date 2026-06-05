@@ -98,7 +98,7 @@ export async function searchPeople(
     per_page: perPage,
   };
 
-  const res = await fetch(`${APOLLO_BASE}/mixed_people/search`, {
+  const res = await fetch(`${APOLLO_BASE}/mixed_people/api_search`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
