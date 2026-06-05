@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getSiteUrl } from "@/lib/site-url";
 
 const SCOPES = [
   "offline_access",
@@ -14,14 +15,16 @@ export async function GET() {
     data: { user },
   } = await supabase.auth.getUser();
 
+  const siteUrl = getSiteUrl();
+
   if (!user) {
-    return NextResponse.redirect(new URL("/login", process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"));
+    return NextResponse.redirect(`${siteUrl}/login`);
   }
 
   const params = new URLSearchParams({
     client_id: process.env.AZURE_AD_CLIENT_ID!,
     response_type: "code",
-    redirect_uri: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/auth/outlook/callback`,
+    redirect_uri: `${siteUrl}/auth/outlook/callback`,
     response_mode: "query",
     scope: SCOPES,
     state: user.id,

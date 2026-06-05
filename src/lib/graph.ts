@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
+import { getSiteUrl } from "@/lib/site-url";
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
 type TokenRow = {
   outlook_access_token: string | null;
@@ -52,7 +52,7 @@ async function getAccessToken(userId: string): Promise<string> {
         client_secret: process.env.AZURE_AD_CLIENT_SECRET!,
         grant_type: "refresh_token",
         refresh_token: profile.outlook_refresh_token,
-        redirect_uri: `${SITE_URL}/auth/outlook/callback`,
+        redirect_uri: `${getSiteUrl()}/auth/outlook/callback`,
       }),
     },
   );
