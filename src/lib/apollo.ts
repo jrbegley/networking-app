@@ -42,6 +42,93 @@ export type ApolloMatchResponse = {
   person: ApolloPerson | null;
 };
 
+// ── People search ─────────────────────────────────────────────────────
+
+export type ApolloSearchFilters = {
+  q_keywords?: string;
+  person_titles?: string[];
+  person_locations?: string[];
+  person_seniorities?: string[];
+  person_schools?: string[];
+  organization_industry_tag_ids?: string[];
+  organization_num_employees_ranges?: string[];
+};
+
+export type ApolloSearchPerson = {
+  id: string;
+  name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  title: string | null;
+  linkedin_url: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  organization: { name: string | null; primary_domain: string | null } | null;
+  // email is only populated if the user has reveal credits; omit from type
+  // to avoid confusion — use enrichPersonByLinkedInUrl for that.
+};
+
+export type ApolloSearchResponse = {
+  people: ApolloSearchPerson[];
+  pagination: {
+    page: number;
+    per_page: number;
+    total_entries: number;
+    total_pages: number;
+  };
+};
+
+/**
+ * Search Apollo's people database. Does NOT reveal emails — that costs
+ * credits and goes through enrichPersonByLinkedInUrl separately.
+ * Searching itself is free on the Apollo free tier.
+ */
+export async function searchPeople(
+  filters: ApolloSearchFilters,
+  page = 1,
+  perPage = 25,
+): Promise<ApolloSearchResponse> {
+  const apiKey = process.env.APOLLO_API_KEY;
+  if (!apiKey) throw new Error("APOLLO_API_KEY not set");
+
+  const body = {
+    ...filters,
+    page,
+    per_page: perPage,
+  };
+
+  const res = await fetch(`${APOLLO_BASE}/mixed_people/search`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache",
+      "X-Api-Key": apiKey,
+      accept: "application/json",
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `Apollo search ${res.status}: ${text.slice(0, 200) || res.statusText}`,
+    );
+  }
+
+  const data = await res.json();
+  return {
+    people: (data.people ?? []) as ApolloSearchPerson[],
+    pagination: data.pagination ?? {
+      page,
+      per_page: perPage,
+      total_entries: 0,
+      total_pages: 0,
+    },
+  };
+}
+
 export async function enrichPersonByLinkedInUrl(
   linkedinUrl: string,
 ): Promise<ApolloMatchResponse> {

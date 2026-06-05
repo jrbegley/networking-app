@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { summarizeApolloPayload } from "@/lib/apollo-summary";
 import { summarizeTavilyPayload } from "@/lib/tavily-summary";
 import { summarizeLinkedInPayload } from "@/lib/linkedin-summary";
+import type { ApolloSearchFilters } from "@/lib/apollo";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -358,3 +359,73 @@ function parseDraft(text: string): { subject: string; body: string } {
 
 // summarizeApolloPayload now lives in src/lib/apollo-summary.ts so the
 // detail page and the drafting prompt share one implementation.
+
+// ── Apollo search filter translation ──────────────────────────────────
+
+/**
+ * Translate a natural-language search query into Apollo people-search
+ * filters. The user's profile is passed as context so Claude can infer
+ * shared-trait searches ("people like me in finance" → schools from resume,
+ * industries from bio, etc.).
+ *
+ * Returns only fields Apollo actually accepts; unknown fields are omitted.
+ * Uses a small max_tokens budget since output is structured JSON only.
+ */
+export async function translateSearchQuery(
+  query: string,
+  userProfile: {
+    bio: string | null;
+    resumeText: string | null;
+    outreachGoal: string | null;
+  },
+): Promise<ApolloSearchFilters> {
+  const systemPrompt = `You translate a natural-language people-search query into a JSON object of Apollo.io search filters. Output ONLY valid JSON, no prose, no markdown fences.
+
+Available filter fields (all optional, only include what's relevant):
+- q_keywords: string — free-text keywords passed to Apollo's search engine
+- person_titles: string[] — job titles to match (e.g. ["Partner", "Vice President"])
+- person_locations: string[] — cities/states/countries (e.g. ["Chicago, Illinois", "New York"])
+- person_seniorities: string[] — one or more of: "c_suite", "vp", "director", "manager", "senior", "entry", "intern", "partner", "owner"
+- person_schools: string[] — universities attended (e.g. ["University of Illinois at Urbana-Champaign"])
+- organization_num_employees_ranges: string[] — e.g. ["1,10", "11,50", "51,200", "201,500", "501,1000", "1001,5000", "5001,10000", "10001,"]
+
+Rules:
+- For alumni/shared-school searches, infer schools from the sender profile if not stated explicitly
+- For industry searches, use q_keywords rather than organization_industry_tag_ids (IDs are not stable)
+- Keep filters focused — fewer, more relevant filters produce better Apollo results than many narrow ones
+- If the query is vague, bias toward q_keywords and person_titles
+- Never include empty arrays`;
+
+  const userMessage = [
+    `SENDER PROFILE (use to infer shared traits):`,
+    userProfile.bio ? `Bio: ${userProfile.bio}` : "",
+    userProfile.resumeText ? `Resume:\n${userProfile.resumeText}` : "",
+    userProfile.outreachGoal ? `Outreach goal: ${userProfile.outreachGoal}` : "",
+    "",
+    `SEARCH QUERY: ${query}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 400,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userMessage }],
+  });
+
+  const text = response.content
+    .filter((c): c is Anthropic.TextBlock => c.type === "text")
+    .map((c) => c.text)
+    .join("")
+    .trim();
+
+  try {
+    // Strip markdown fences if Claude wrapped the JSON anyway
+    const clean = text.replace(/^```json?\s*/i, "").replace(/```\s*$/i, "").trim();
+    return JSON.parse(clean) as ApolloSearchFilters;
+  } catch {
+    // Fallback: put the whole query in keywords
+    return { q_keywords: query };
+  }
+}

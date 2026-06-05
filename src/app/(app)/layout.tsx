@@ -44,6 +44,12 @@ export default async function AppLayout({
                 Pipeline
               </Link>
               <Link
+                href="/search"
+                className="text-slate-600 hover:text-slate-900"
+              >
+                Find
+              </Link>
+              <Link
                 href="/settings"
                 className="text-slate-600 hover:text-slate-900"
               >
