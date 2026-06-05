@@ -473,57 +473,42 @@ export async function researchWithTavily(
     "imdb.com",
   ];
 
-  const personQueryParts: string[] = [`"${contact.name}"`];
-  if (company?.name) personQueryParts.push(`"${company.name}"`);
-  personQueryParts.push(
-    `(interview OR podcast OR keynote OR talk OR "op-ed" OR author OR wrote OR speaks)`,
-  );
-  const personQuery = personQueryParts.join(" ");
-
   const firmQuery = company?.name
     ? `"${company.name}" (announces OR launches OR raises OR acquires OR partners OR report OR initiative)`
     : null;
 
-  // Extract a non-LinkedIn corporate page when we have one — the firm's
-  // /about often surfaces strategy language worth referencing. LinkedIn
-  // extract was dropped: it almost always 403s and duplicates Apify.
+  if (!firmQuery) {
+    return {
+      error: "Add a company to this contact before running web research.",
+      cached: false,
+      message: null,
+    };
+  }
+
+  // Extract the firm's /about page when we have a domain — often surfaces
+  // strategy language worth referencing in outreach.
   const aboutUrl = company?.domain
     ? `https://${company.domain.replace(/^https?:\/\//, "").replace(/\/$/, "")}/about`
     : null;
 
-  const [personSettled, firmSettled, extractSettled] = await Promise.allSettled(
-    [
-      searchTavily(personQuery, {
-        excludeDomains: NOISY_DOMAINS,
-        maxResults: 7,
-        timeRange: "year",
-      }),
-      firmQuery
-        ? searchTavily(firmQuery, {
-            excludeDomains: NOISY_DOMAINS,
-            maxResults: 7,
-            topic: "news",
-            days: 180,
-          })
-        : Promise.resolve(null),
-      aboutUrl ? extractTavily([aboutUrl]) : Promise.resolve(null),
-    ],
-  );
+  const [firmSettled, extractSettled] = await Promise.allSettled([
+    searchTavily(firmQuery, {
+      excludeDomains: NOISY_DOMAINS,
+      maxResults: 7,
+      topic: "news",
+      days: 180,
+    }),
+    aboutUrl ? extractTavily([aboutUrl]) : Promise.resolve(null),
+  ]);
 
-  const personResult =
-    personSettled.status === "fulfilled" ? personSettled.value : null;
   const firmResult =
     firmSettled.status === "fulfilled" ? firmSettled.value : null;
   const extractResult =
     extractSettled.status === "fulfilled" ? extractSettled.value : null;
   const firstErr =
-    personSettled.status === "rejected"
-      ? String(personSettled.reason)
-      : firmSettled.status === "rejected"
-        ? String(firmSettled.reason)
-        : null;
+    firmSettled.status === "rejected" ? String(firmSettled.reason) : null;
 
-  if (!personResult && !firmResult && !extractResult) {
+  if (!firmResult && !extractResult) {
     return {
       error: firstErr ?? "Tavily call failed.",
       cached: false,
@@ -532,14 +517,11 @@ export async function researchWithTavily(
   }
 
   const searches: TavilyNamedSearch[] = [
-    { label: "person", query: personQuery, result: personResult },
+    { label: "firm", query: firmQuery, result: firmResult },
   ];
-  if (firmQuery) {
-    searches.push({ label: "firm", query: firmQuery, result: firmResult });
-  }
 
   const payload: TavilyResearchPayload = {
-    query: searches.map((s) => `[${s.label}] ${s.query}`).join("  ||  "),
+    query: firmQuery,
     searches,
     extract: extractResult,
   };
@@ -573,14 +555,10 @@ export async function researchWithTavily(
 
   // Compose a status message that reflects what actually came back
   const extractCount = extractResult?.results?.length ?? 0;
-  const personCount = personResult?.results?.length ?? 0;
   const firmCount = firmResult?.results?.length ?? 0;
   const bits: string[] = [];
-  if (personCount > 0) {
-    bits.push(`${personCount} on ${contact.name.split(" ")[0]}`);
-  }
   if (firmCount > 0 && company?.name) {
-    bits.push(`${firmCount} on ${company.name}`);
+    bits.push(`${firmCount} results on ${company.name}`);
   }
   if (extractCount > 0) {
     bits.push(`extracted ${extractCount} page${extractCount === 1 ? "" : "s"}`);
