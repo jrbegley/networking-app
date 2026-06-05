@@ -10,6 +10,14 @@
 
 const TAVILY_BASE = "https://api.tavily.com";
 
+/**
+ * Sidelined 2026-06-04 — coffee-chat material wasn't landing.
+ * The `researchWithTavily` action still works if called directly, so we
+ * can keep iterating on the query. Flip this flag to surface Tavily in
+ * the contact UI and feed it back into the drafting prompt.
+ */
+export const TAVILY_ENABLED = false;
+
 // ── Search ─────────────────────────────────────────────────────────────
 
 export type TavilyResult = {
@@ -30,6 +38,13 @@ export type TavilySearchOptions = {
   includeDomains?: string[];
   excludeDomains?: string[];
   maxResults?: number;
+  // "general" (default) returns broad results; "news" restricts to news outlets
+  // and unlocks the `days` recency filter.
+  topic?: "general" | "news";
+  // Only honored when topic === "news".
+  days?: number;
+  // Coarser recency hint that works on general topic too.
+  timeRange?: "day" | "week" | "month" | "year";
 };
 
 export async function searchTavily(
@@ -39,19 +54,24 @@ export async function searchTavily(
   const apiKey = process.env.TAVILY_API_KEY;
   if (!apiKey) throw new Error("TAVILY_API_KEY not set");
 
+  const body: Record<string, unknown> = {
+    api_key: apiKey,
+    query,
+    search_depth: "advanced",
+    include_answer: true,
+    include_raw_content: false,
+    max_results: opts.maxResults ?? 5,
+    include_domains: opts.includeDomains ?? [],
+    exclude_domains: opts.excludeDomains ?? [],
+  };
+  if (opts.topic) body.topic = opts.topic;
+  if (opts.topic === "news" && opts.days) body.days = opts.days;
+  if (opts.timeRange) body.time_range = opts.timeRange;
+
   const res = await fetch(`${TAVILY_BASE}/search`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      api_key: apiKey,
-      query,
-      search_depth: "advanced",
-      include_answer: true,
-      include_raw_content: false,
-      max_results: opts.maxResults ?? 5,
-      include_domains: opts.includeDomains ?? [],
-      exclude_domains: opts.excludeDomains ?? [],
-    }),
+    body: JSON.stringify(body),
     cache: "no-store",
   });
 
@@ -110,8 +130,19 @@ export async function extractTavily(
 
 // ── Combined payload (what we persist as a research_artifact) ──────────
 
-export type TavilyResearchPayload = {
+export type TavilyNamedSearch = {
+  label: "person" | "firm" | "general";
   query: string;
-  search: TavilySearchResponse | null;
+  result: TavilySearchResponse | null;
+};
+
+export type TavilyResearchPayload = {
+  // Human-readable combined query string, shown in the UI.
+  query: string;
+  // v2 shape: one or more labeled searches. Older artifacts may still have
+  // the v1 `search` field instead — the summarizer handles both.
+  searches?: TavilyNamedSearch[];
+  // v1 legacy field, retained so old rows render correctly.
+  search?: TavilySearchResponse | null;
   extract: TavilyExtractResponse | null;
 };

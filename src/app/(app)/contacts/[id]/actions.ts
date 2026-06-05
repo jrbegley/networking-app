@@ -5,7 +5,9 @@ import { enrichPersonByLinkedInUrl } from "@/lib/apollo";
 import {
   searchTavily,
   extractTavily,
+  TAVILY_ENABLED,
   type TavilyResearchPayload,
+  type TavilyNamedSearch,
 } from "@/lib/tavily";
 import { scrapeLinkedInProfile } from "@/lib/apify";
 import { isApolloShellResponse } from "@/lib/apollo-summary";
@@ -410,7 +412,7 @@ export async function researchWithTavily(
     .from("contacts")
     .select(
       `id, name, title, linkedin_url, current_stage,
-       company:companies(name)`,
+       company:companies(name, domain)`,
     )
     .eq("id", contactId)
     .maybeSingle();
@@ -428,7 +430,8 @@ export async function researchWithTavily(
 
   const company = Array.isArray(contact.company)
     ? (contact.company[0] ?? null)
-    : ((contact.company as { name: string } | null) ?? null);
+    : ((contact.company as { name: string; domain: string | null } | null) ??
+      null);
 
   // Cache check
   const cutoff = new Date(
@@ -453,40 +456,91 @@ export async function researchWithTavily(
     };
   }
 
-  // Build a targeted query. Just "Isaac Rice" matches dozens of people.
-  // Adding company + title disambiguates dramatically.
-  const queryParts = [contact.name];
-  if (contact.title) queryParts.push(contact.title);
-  if (company?.name) queryParts.push(company.name);
-  const query = queryParts.join(" ");
+  // Goal: surface coffee-chat-worthy material, not "verify identity."
+  // Two queries:
+  //   personQuery — what the person has authored / spoken about publicly
+  //   firmQuery   — recent firm news/initiatives
+  // The person query stays in "general" topic (catches podcasts, transcripts,
+  // talks). The firm query uses news topic + recency window.
 
-  // Run search + extract in parallel. Extract is best-effort — LinkedIn
-  // often blocks bots, but other public profile pages work.
-  const [searchSettled, extractSettled] = await Promise.allSettled([
-    searchTavily(query),
-    contact.linkedin_url
-      ? extractTavily([contact.linkedin_url])
-      : Promise.resolve(null),
-  ]);
+  const NOISY_DOMAINS = [
+    "rocketreach.co",
+    "zoominfo.com",
+    "signalhire.com",
+    "contactout.com",
+    "apollo.io",
+    "wikipedia.org",
+    "imdb.com",
+  ];
 
-  const searchResult =
-    searchSettled.status === "fulfilled" ? searchSettled.value : null;
+  const personQueryParts: string[] = [`"${contact.name}"`];
+  if (company?.name) personQueryParts.push(`"${company.name}"`);
+  personQueryParts.push(
+    `(interview OR podcast OR keynote OR talk OR "op-ed" OR author OR wrote OR speaks)`,
+  );
+  const personQuery = personQueryParts.join(" ");
+
+  const firmQuery = company?.name
+    ? `"${company.name}" (announces OR launches OR raises OR acquires OR partners OR report OR initiative)`
+    : null;
+
+  // Extract a non-LinkedIn corporate page when we have one — the firm's
+  // /about often surfaces strategy language worth referencing. LinkedIn
+  // extract was dropped: it almost always 403s and duplicates Apify.
+  const aboutUrl = company?.domain
+    ? `https://${company.domain.replace(/^https?:\/\//, "").replace(/\/$/, "")}/about`
+    : null;
+
+  const [personSettled, firmSettled, extractSettled] = await Promise.allSettled(
+    [
+      searchTavily(personQuery, {
+        excludeDomains: NOISY_DOMAINS,
+        maxResults: 7,
+        timeRange: "year",
+      }),
+      firmQuery
+        ? searchTavily(firmQuery, {
+            excludeDomains: NOISY_DOMAINS,
+            maxResults: 7,
+            topic: "news",
+            days: 180,
+          })
+        : Promise.resolve(null),
+      aboutUrl ? extractTavily([aboutUrl]) : Promise.resolve(null),
+    ],
+  );
+
+  const personResult =
+    personSettled.status === "fulfilled" ? personSettled.value : null;
+  const firmResult =
+    firmSettled.status === "fulfilled" ? firmSettled.value : null;
   const extractResult =
     extractSettled.status === "fulfilled" ? extractSettled.value : null;
-  const searchErr =
-    searchSettled.status === "rejected" ? String(searchSettled.reason) : null;
+  const firstErr =
+    personSettled.status === "rejected"
+      ? String(personSettled.reason)
+      : firmSettled.status === "rejected"
+        ? String(firmSettled.reason)
+        : null;
 
-  if (!searchResult && !extractResult) {
+  if (!personResult && !firmResult && !extractResult) {
     return {
-      error: searchErr ?? "Tavily call failed.",
+      error: firstErr ?? "Tavily call failed.",
       cached: false,
       message: null,
     };
   }
 
+  const searches: TavilyNamedSearch[] = [
+    { label: "person", query: personQuery, result: personResult },
+  ];
+  if (firmQuery) {
+    searches.push({ label: "firm", query: firmQuery, result: firmResult });
+  }
+
   const payload: TavilyResearchPayload = {
-    query,
-    search: searchResult,
+    query: searches.map((s) => `[${s.label}] ${s.query}`).join("  ||  "),
+    searches,
     extract: extractResult,
   };
 
@@ -519,13 +573,17 @@ export async function researchWithTavily(
 
   // Compose a status message that reflects what actually came back
   const extractCount = extractResult?.results?.length ?? 0;
-  const sourceCount = searchResult?.results?.length ?? 0;
+  const personCount = personResult?.results?.length ?? 0;
+  const firmCount = firmResult?.results?.length ?? 0;
   const bits: string[] = [];
+  if (personCount > 0) {
+    bits.push(`${personCount} on ${contact.name.split(" ")[0]}`);
+  }
+  if (firmCount > 0 && company?.name) {
+    bits.push(`${firmCount} on ${company.name}`);
+  }
   if (extractCount > 0) {
     bits.push(`extracted ${extractCount} page${extractCount === 1 ? "" : "s"}`);
-  }
-  if (sourceCount > 0) {
-    bits.push(`${sourceCount} web source${sourceCount === 1 ? "" : "s"}`);
   }
   const msg =
     bits.length > 0
@@ -704,14 +762,16 @@ export async function draftEmail(
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
-    supabase
-      .from("research_artifacts")
-      .select("payload")
-      .eq("contact_id", contactId)
-      .eq("source", "tavily")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+    TAVILY_ENABLED
+      ? supabase
+          .from("research_artifacts")
+          .select("payload")
+          .eq("contact_id", contactId)
+          .eq("source", "tavily")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null as null }),
     supabase
       .from("profiles")
       .select("bio, resume_text, outreach_goal, linkedin_url")

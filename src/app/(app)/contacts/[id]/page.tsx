@@ -18,6 +18,7 @@ import { ResearchNotes } from "./ResearchNotes";
 import { EditContact } from "./EditContact";
 import { summarizeTavilyPayload } from "@/lib/tavily-summary";
 import { summarizeLinkedInPayload } from "@/lib/linkedin-summary";
+import { TAVILY_ENABLED } from "@/lib/tavily";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -55,7 +56,8 @@ export default async function ContactDetailPage({ params }: PageProps) {
     : (contact.company ?? null);
   const stage = contact.current_stage as PipelineStage;
 
-  // Most recent LinkedIn + Tavily artifacts for display (Apollo hidden)
+  // Most recent LinkedIn + Tavily artifacts for display (Apollo hidden).
+  // Tavily fetch is skipped when sidelined to save a round-trip.
   const [
     { data: latestLinkedin },
     { data: latestTavily },
@@ -68,14 +70,16 @@ export default async function ContactDetailPage({ params }: PageProps) {
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
-    supabase
-      .from("research_artifacts")
-      .select("id, payload, created_at")
-      .eq("contact_id", id)
-      .eq("source", "tavily")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+    TAVILY_ENABLED
+      ? supabase
+          .from("research_artifacts")
+          .select("id, payload, created_at")
+          .eq("contact_id", id)
+          .eq("source", "tavily")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null as null }),
   ]);
 
   // Interactions timeline
@@ -167,7 +171,7 @@ export default async function ContactDetailPage({ params }: PageProps) {
               contactId={contact.id}
               disabled={!contact.linkedin_url}
             />
-            <TavilyButton contactId={contact.id} />
+            {TAVILY_ENABLED && <TavilyButton contactId={contact.id} />}
           </div>
         </div>
 
@@ -186,8 +190,8 @@ export default async function ContactDetailPage({ params }: PageProps) {
           )
         )}
 
-        {/* Web research (Tavily) */}
-        {latestTavily && (
+        {/* Web research (Tavily) — sidelined, gate keeps the block reachable */}
+        {TAVILY_ENABLED && latestTavily && (
           <TavilyDataBlock
             payload={latestTavily.payload}
             fetchedAt={latestTavily.created_at}
@@ -208,7 +212,10 @@ export default async function ContactDetailPage({ params }: PageProps) {
       </section>
 
       {/* ── Draft outreach ──────────────────────────────────────────── */}
-      <DraftPanel contactId={contact.id} hasResearch={!!(latestLinkedin || latestTavily)} />
+      <DraftPanel
+        contactId={contact.id}
+        hasResearch={!!latestLinkedin || (TAVILY_ENABLED && !!latestTavily)}
+      />
 
       {/* ── Company panel ───────────────────────────────────────────── */}
       {company && (
