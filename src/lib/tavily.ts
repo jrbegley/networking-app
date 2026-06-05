@@ -16,7 +16,7 @@ const TAVILY_BASE = "https://api.tavily.com";
  * can keep iterating on the query. Flip this flag to surface Tavily in
  * the contact UI and feed it back into the drafting prompt.
  */
-export const TAVILY_ENABLED = false;
+export const TAVILY_ENABLED = true;
 
 // ── Search ─────────────────────────────────────────────────────────────
 
