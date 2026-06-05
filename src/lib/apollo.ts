@@ -150,6 +150,73 @@ export async function searchPeople(
   };
 }
 
+// ── Bulk enrichment ────────────────────────────────────────────────────
+
+export type ApolloEnrichedPerson = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  name: string | null;
+  email: string | null;
+  email_status: string | null;
+  linkedin_url: string | null;
+  title: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  organization: ApolloOrganization | null;
+  employment_history: ApolloPerson["employment_history"];
+};
+
+/**
+ * Bulk enrich up to 10 people by Apollo ID. Costs 1 credit per matched
+ * person. Returns verified email + full profile. linkedin_url may still
+ * be null if Apollo doesn't have it for that person.
+ */
+export async function bulkEnrichByApolloId(
+  ids: string[],
+): Promise<ApolloEnrichedPerson[]> {
+  if (!ids.length) return [];
+  const apiKey = process.env.APOLLO_API_KEY;
+  if (!apiKey) throw new Error("APOLLO_API_KEY not set");
+
+  const res = await fetch(`${APOLLO_BASE}/people/bulk_match`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache",
+      "X-Api-Key": apiKey,
+      accept: "application/json",
+    },
+    body: JSON.stringify({
+      details: ids.map((id) => ({ id })),
+    }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Apollo bulk_match ${res.status}: ${text.slice(0, 200)}`);
+  }
+
+  const data = await res.json();
+  return ((data.matches ?? []) as Record<string, unknown>[]).map((p) => ({
+    id: (p.id as string) ?? "",
+    first_name: (p.first_name as string | null) ?? null,
+    last_name: (p.last_name as string | null) ?? null,
+    name: (p.name as string | null) ?? null,
+    email: (p.email as string | null) ?? null,
+    email_status: (p.email_status as string | null) ?? null,
+    linkedin_url: (p.linkedin_url as string | null) ?? null,
+    title: (p.title as string | null) ?? null,
+    city: (p.city as string | null) ?? null,
+    state: (p.state as string | null) ?? null,
+    country: (p.country as string | null) ?? null,
+    organization: (p.organization as ApolloOrganization | null) ?? null,
+    employment_history: (p.employment_history as ApolloPerson["employment_history"]) ?? [],
+  }));
+}
+
 export async function enrichPersonByLinkedInUrl(
   linkedinUrl: string,
 ): Promise<ApolloMatchResponse> {

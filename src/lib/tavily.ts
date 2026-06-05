@@ -140,18 +140,30 @@ export async function extractTavily(
  */
 export async function findLinkedInUrl(opts: {
   firstName: string;
-  lastName: string; // may be just an initial — we skip it if so
+  lastName: string;
   company: string;
   title?: string | null;
+  email?: string | null; // preferred signal when available
 }): Promise<string | null> {
-  const { firstName, lastName, company, title } = opts;
+  const { firstName, lastName, company, title, email } = opts;
 
-  // Skip the last name if it's just an initial (single char, with or without
-  // a dot) — it hurts more than it helps and causes false matches.
-  const isInitialOnly = lastName.replace(".", "").trim().length <= 1;
-  const namePart = isInitialOnly ? `"${firstName}"` : `"${firstName} ${lastName}"`;
-  const titlePart = title ? ` "${title}"` : "";
-  const query = `site:linkedin.com/in ${namePart} "${company}"${titlePart}`;
+  let query: string;
+
+  if (email) {
+    // Email is the most precise signal — domain ties directly to the person.
+    // Search for their name + email domain on LinkedIn.
+    const domain = email.split("@")[1] ?? "";
+    const isInitialOnly = lastName.replace(".", "").trim().length <= 1;
+    const namePart = isInitialOnly ? `"${firstName}"` : `"${firstName} ${lastName}"`;
+    query = domain
+      ? `site:linkedin.com/in ${namePart} "${domain}"`
+      : `site:linkedin.com/in ${namePart} "${company}"`;
+  } else {
+    const isInitialOnly = lastName.replace(".", "").trim().length <= 1;
+    const namePart = isInitialOnly ? `"${firstName}"` : `"${firstName} ${lastName}"`;
+    const titlePart = title ? ` "${title}"` : "";
+    query = `site:linkedin.com/in ${namePart} "${company}"${titlePart}`;
+  }
 
   let response: TavilySearchResponse;
   try {

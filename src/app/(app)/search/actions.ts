@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { searchPeople, type ApolloSearchPerson } from "@/lib/apollo";
+import { searchPeople, bulkEnrichByApolloId, type ApolloSearchPerson } from "@/lib/apollo";
 import { translateSearchQuery, inferLastNamesFromObfuscated } from "@/lib/claude";
 import { findLinkedInUrl } from "@/lib/tavily";
 import { revalidatePath } from "next/cache";
@@ -182,21 +182,35 @@ export async function addContactsFromSearch(
   } = await supabase.auth.getUser();
   if (!user) return { added: 0, error: "Not signed in." };
 
-  // Resolve LinkedIn URLs in parallel via Tavily before inserting.
-  // Apollo free tier only returns first name + last initial, so we search
-  // site:linkedin.com/in with name + company + title. Null if not found.
+  // Step 1: Bulk enrich via Apollo (1 credit/person) to get verified email.
+  // Process in batches of 10 (API limit).
+  const apolloIds = people.map((p) => p.id).filter(Boolean);
+  const enrichedMap = new Map<string, Awaited<ReturnType<typeof bulkEnrichByApolloId>>[number]>();
+  for (let i = 0; i < apolloIds.length; i += 10) {
+    try {
+      const batch = await bulkEnrichByApolloId(apolloIds.slice(i, i + 10));
+      for (const e of batch) if (e.id) enrichedMap.set(e.id, e);
+    } catch {
+      // Non-fatal — proceed without enrichment for this batch
+    }
+  }
+
+  // Step 2: Resolve LinkedIn URLs via Tavily in parallel.
+  // Use verified email as the primary signal when available — much more
+  // precise than guessing from an obfuscated name.
   const linkedinUrls = await Promise.all(
     people.map((person) => {
-      const firstName = person.first_name ?? person.name?.split(" ")[0] ?? "";
-      const lastName = person.last_name ?? person.name?.split(" ").slice(1).join(" ") ?? "";
+      const enriched = enrichedMap.get(person.id);
+      // If Apollo already returned a linkedin_url, use it directly
+      if (enriched?.linkedin_url) return Promise.resolve(enriched.linkedin_url);
+
+      const firstName = person.first_name ?? "";
+      const lastName = person.last_name ?? ""; // inferred earlier
       const company = person.organization?.name ?? "";
+      const email = enriched?.email ?? null;
       if (!firstName || !company) return Promise.resolve(null);
-      return findLinkedInUrl({
-        firstName,
-        lastName,
-        company,
-        title: person.title ?? null,
-      });
+
+      return findLinkedInUrl({ firstName, lastName, company, title: person.title ?? null, email });
     }),
   );
 
@@ -204,16 +218,18 @@ export async function addContactsFromSearch(
 
   for (let i = 0; i < people.length; i++) {
     const person = people[i];
-    const linkedinUrl = linkedinUrls[i] ?? person.linkedin_url ?? null;
+    const enriched = enrichedMap.get(person.id);
+    const linkedinUrl = linkedinUrls[i] ?? null;
 
-    // Upsert company first
+    // Upsert company
     let companyId: string | null = null;
-    if (person.organization?.name) {
+    const orgName = person.organization?.name ?? null;
+    if (orgName) {
       const { data: existing } = await supabase
         .from("companies")
         .select("id")
         .eq("owner_id", user.id)
-        .eq("name", person.organization.name)
+        .eq("name", orgName)
         .maybeSingle();
 
       if (existing) {
@@ -223,8 +239,8 @@ export async function addContactsFromSearch(
           .from("companies")
           .insert({
             owner_id: user.id,
-            name: person.organization.name,
-            domain: person.organization.primary_domain ?? null,
+            name: orgName,
+            domain: person.organization?.primary_domain ?? null,
           })
           .select("id")
           .single();
@@ -235,7 +251,8 @@ export async function addContactsFromSearch(
     const { error } = await supabase.from("contacts").insert({
       owner_id: user.id,
       name: buildName(person),
-      title: person.title ?? null,
+      title: person.title ?? enriched?.title ?? null,
+      email: enriched?.email ?? null,
       linkedin_url: linkedinUrl,
       apollo_id: person.id ?? null,
       company_id: companyId,
