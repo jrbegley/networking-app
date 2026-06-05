@@ -118,6 +118,10 @@ export async function searchPeople(
 
   const data = await res.json();
 
+  if (data.people?.length) {
+    console.log("[Apollo] first person raw:", JSON.stringify(data.people[0], null, 2));
+  }
+
   return {
     people: ((data.people ?? []) as Record<string, unknown>[]).map((p) => ({
       id: (p.id as string) ?? "",
