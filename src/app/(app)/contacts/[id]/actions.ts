@@ -17,7 +17,7 @@ import {
   type DraftContext,
 } from "@/lib/claude";
 import { revalidatePath } from "next/cache";
-import { createOutlookDraft } from "@/lib/graph";
+import { createOutlookDraft, fetchMessagesFromSender } from "@/lib/graph";
 
 // NB: maxDuration lives on page.tsx — server-action files can only export
 // async functions, not constants.
@@ -959,6 +959,78 @@ export async function sendToOutlookDrafts(
 
   revalidatePath(`/contacts/${contactId}`);
   return { error: null, webLink: result.webLink };
+}
+
+// ── Outlook inbox sync ────────────────────────────────────────────────
+
+export type SyncResult = {
+  error: string | null;
+  newCount: number;
+};
+
+/**
+ * Query Graph for messages from this contact's email address and log any
+ * we haven't seen before (deduplicated by outlook_message_id).
+ * Auto-advances sent -> replied if new messages are found.
+ */
+export async function syncContactInbox(contactId: string): Promise<SyncResult> {
+  if (!contactId) return { error: "Missing contact id.", newCount: 0 };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in.", newCount: 0 };
+
+  const { data: contact } = await supabase
+    .from("contacts")
+    .select("email, current_stage")
+    .eq("id", contactId)
+    .maybeSingle();
+
+  if (!contact?.email) {
+    return { error: "Contact has no email address.", newCount: 0 };
+  }
+
+  const { messages, error } = await fetchMessagesFromSender(user.id, contact.email);
+  if (error) return { error, newCount: 0 };
+  if (messages.length === 0) return { error: null, newCount: 0 };
+
+  // Load already-logged message IDs for this contact to deduplicate
+  const { data: existing } = await supabase
+    .from("interactions")
+    .select("outlook_message_id")
+    .eq("contact_id", contactId)
+    .eq("type", "email_received")
+    .not("outlook_message_id", "is", null);
+
+  const seenIds = new Set((existing ?? []).map((r) => r.outlook_message_id));
+  const newMessages = messages.filter((m) => !seenIds.has(m.id));
+
+  if (newMessages.length === 0) return { error: null, newCount: 0 };
+
+  await supabase.from("interactions").insert(
+    newMessages.map((m) => ({
+      owner_id: user.id,
+      contact_id: contactId,
+      type: "email_received",
+      subject: m.subject,
+      body: m.bodyText,
+      outlook_message_id: m.id,
+      occurred_at: m.receivedAt,
+    })),
+  );
+
+  if (contact.current_stage === "sent") {
+    await supabase
+      .from("contacts")
+      .update({ current_stage: "replied" })
+      .eq("id", contactId);
+  }
+
+  revalidatePath(`/contacts/${contactId}`);
+  revalidatePath("/contacts");
+  return { error: null, newCount: newMessages.length };
 }
 
 // ── Log received email ────────────────────────────────────────────────

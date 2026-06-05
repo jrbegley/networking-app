@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { logReceivedEmail } from "./actions";
+import { logReceivedEmail, syncContactInbox } from "./actions";
 
 type Interaction = {
   id: string;
@@ -14,19 +14,39 @@ type Interaction = {
 export function EmailThread({
   contactId,
   interactions,
+  outlookConnected,
+  hasEmail,
 }: {
   contactId: string;
   interactions: Interaction[];
+  outlookConnected: boolean;
+  hasEmail: boolean;
 }) {
   const emails = interactions.filter(
     (i) => i.type === "email_sent" || i.type === "email_received",
   );
 
+  const [syncing, setSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [logging, setLogging] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [status, setStatus] = useState<string | null>(null);
+
+  async function handleSync() {
+    setSyncing(true);
+    setSyncStatus(null);
+    const r = await syncContactInbox(contactId);
+    setSyncing(false);
+    if (r.error) {
+      setSyncStatus(`Error: ${r.error}`);
+    } else if (r.newCount === 0) {
+      setSyncStatus("No new emails found.");
+    } else {
+      setSyncStatus(`${r.newCount} new email${r.newCount === 1 ? "" : "s"} found.`);
+    }
+  }
 
   async function handleLog() {
     setLogging(true);
@@ -47,14 +67,32 @@ export function EmailThread({
     <section className="rounded-lg bg-white p-6 ring-1 ring-slate-200">
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-base font-semibold text-slate-900">Emails</h2>
-        <button
-          type="button"
-          onClick={() => setShowForm((v) => !v)}
-          className="text-xs text-slate-500 hover:text-slate-800"
-        >
-          {showForm ? "Cancel" : "+ Log reply"}
-        </button>
+        <div className="flex items-center gap-3">
+          {outlookConnected && hasEmail && (
+            <button
+              type="button"
+              onClick={handleSync}
+              disabled={syncing}
+              className="text-xs text-slate-500 hover:text-slate-800 disabled:opacity-50"
+            >
+              {syncing ? "Checking…" : "↻ Check inbox"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowForm((v) => !v)}
+            className="text-xs text-slate-500 hover:text-slate-800"
+          >
+            {showForm ? "Cancel" : "+ Log reply"}
+          </button>
+        </div>
       </div>
+
+      {syncStatus && (
+        <p className={`mt-2 text-xs ${syncStatus.startsWith("Error") ? "text-red-600" : "text-slate-500"}`}>
+          {syncStatus}
+        </p>
+      )}
 
       {/* Log received email form */}
       {showForm && (

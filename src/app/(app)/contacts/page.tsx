@@ -5,6 +5,18 @@ import type { PipelineStage } from "@/lib/pipeline";
 export default async function ContactsPage() {
   const supabase = await createClient();
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: profile } = user
+    ? await supabase
+        .from("profiles")
+        .select("outlook_access_token")
+        .eq("id", user.id)
+        .maybeSingle()
+    : { data: null };
+  const outlookConnected = !!(profile?.outlook_access_token);
+
   const { data, error } = await supabase
     .from("contacts")
     .select(
@@ -42,5 +54,5 @@ export default async function ContactsPage() {
     };
   });
 
-  return <PipelineView contacts={contacts} />;
+  return <PipelineView contacts={contacts} outlookConnected={outlookConnected} />;
 }

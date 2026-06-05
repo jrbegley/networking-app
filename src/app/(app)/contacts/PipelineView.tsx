@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { syncAllInboxes } from "./actions";
 import {
   STAGE_LABEL,
   STAGE_BADGE_CLASS,
@@ -28,8 +29,30 @@ const NO_GROUP_LABEL: Record<GroupBy, string> = {
   industry: "No industry",
 };
 
-export function PipelineView({ contacts }: { contacts: ContactRow[] }) {
+export function PipelineView({
+  contacts,
+  outlookConnected,
+}: {
+  contacts: ContactRow[];
+  outlookConnected: boolean;
+}) {
   const [groupBy, setGroupBy] = useState<GroupBy>("company");
+  const [syncing, startSync] = useTransition();
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
+
+  function handleSyncAll() {
+    setSyncStatus(null);
+    startSync(async () => {
+      const r = await syncAllInboxes();
+      if (r.error) {
+        setSyncStatus(`Error: ${r.error}`);
+      } else if (r.newCount === 0) {
+        setSyncStatus(`Checked ${r.contactsChecked} contacts — no new emails.`);
+      } else {
+        setSyncStatus(`${r.newCount} new email${r.newCount === 1 ? "" : "s"} logged across ${r.contactsChecked} contacts.`);
+      }
+    });
+  }
 
   const groups = buildGroups(contacts, groupBy);
 
@@ -45,13 +68,31 @@ export function PipelineView({ contacts }: { contacts: ContactRow[] }) {
             {contacts.length} contact{contacts.length === 1 ? "" : "s"}
           </p>
         </div>
-        <Link
-          href="/contacts/new"
-          className="inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
-        >
-          + Add contact
-        </Link>
+        <div className="flex items-center gap-3">
+          {outlookConnected && (
+            <button
+              type="button"
+              onClick={handleSyncAll}
+              disabled={syncing}
+              className="inline-flex items-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+            >
+              {syncing ? "Syncing…" : "↻ Sync inbox"}
+            </button>
+          )}
+          <Link
+            href="/contacts/new"
+            className="inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
+          >
+            + Add contact
+          </Link>
+        </div>
       </div>
+
+      {syncStatus && (
+        <p className={`mt-2 text-sm ${syncStatus.startsWith("Error") ? "text-red-600" : "text-slate-500"}`}>
+          {syncStatus}
+        </p>
+      )}
 
       {/* Group-by toggle */}
       <div className="mt-4 flex items-center gap-2">

@@ -291,6 +291,8 @@ export default async function ContactDetailPage({ params }: PageProps) {
       <EmailThread
         contactId={contact.id}
         interactions={interactions ?? []}
+        outlookConnected={outlookConnected}
+        hasEmail={!!contact.email}
       />
     </div>
   );

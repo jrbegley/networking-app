@@ -144,6 +144,67 @@ export async function createOutlookDraft(
   };
 }
 
+export type GraphMessage = {
+  id: string;
+  subject: string | null;
+  bodyText: string | null;
+  from: string | null;
+  receivedAt: string;
+};
+
+/**
+ * Fetch messages in the user's inbox/sent folder from a specific sender
+ * address within the last `lookbackDays` days. Returns plain-text body.
+ * Requests text body via Prefer header to avoid HTML parsing.
+ */
+export async function fetchMessagesFromSender(
+  userId: string,
+  senderEmail: string,
+  lookbackDays = 90,
+): Promise<{ messages: GraphMessage[]; error: string | null }> {
+  let accessToken: string;
+  try {
+    accessToken = await getAccessToken(userId);
+  } catch (e) {
+    return { messages: [], error: (e as Error).message };
+  }
+
+  const since = new Date(Date.now() - lookbackDays * 86400_000).toISOString();
+  const filter = `from/emailAddress/address eq '${senderEmail}' and receivedDateTime ge ${since}`;
+  const select = "id,subject,body,receivedDateTime,from";
+  const url = `${GRAPH_BASE}/me/messages?$filter=${encodeURIComponent(filter)}&$select=${select}&$top=50&$orderby=receivedDateTime desc`;
+
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Prefer: 'outlook.body-content-type="text"',
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("Graph fetchMessages failed:", res.status, text);
+    return { messages: [], error: `Graph API error ${res.status}` };
+  }
+
+  const json = await res.json();
+  const messages: GraphMessage[] = (json.value ?? []).map(
+    (m: Record<string, unknown>) => ({
+      id: m.id as string,
+      subject: (m.subject as string | null) ?? null,
+      bodyText: ((m.body as Record<string, string> | null)?.content ?? null),
+      from:
+        (
+          (m.from as Record<string, Record<string, string>> | null)
+            ?.emailAddress?.address
+        ) ?? null,
+      receivedAt: m.receivedDateTime as string,
+    }),
+  );
+
+  return { messages, error: null };
+}
+
 /**
  * Disconnects Outlook by clearing the stored tokens. Does NOT revoke the
  * token server-side (would need an extra Graph call and the user can revoke
