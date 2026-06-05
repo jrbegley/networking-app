@@ -114,7 +114,7 @@ export function summarizeLinkedInPayload(payload: unknown): string | null {
       const end = isCurrentRole(job["endDate"] as HarvestDate)
         ? "Present"
         : formatDate(job["endDate"] as HarvestDate);
-      const dates = start ? ` (${start} – ${end})` : "";
+      const dates = start ? ` (${start} to ${end})` : "";
 
       lines.push(`  • ${title || "Role"}${company ? ` at ${company}` : ""}${dates}`);
 
@@ -147,13 +147,13 @@ export function summarizeLinkedInPayload(payload: unknown): string | null {
         (typeof ed["fieldOfStudy"] === "string" ? ed["fieldOfStudy"] : null) ??
         (typeof ed["field"] === "string" ? ed["field"] : null) ??
         "";
-      const parts = [school, degree, field].filter(Boolean).join(" — ");
+      const parts = [school, degree, field].filter(Boolean).join(", ");
       if (!parts) continue;
 
       const start = formatDate(ed["startDate"] as HarvestDate);
       const end = formatDate(ed["endDate"] as HarvestDate);
       const dates =
-        start || end ? ` (${start}${start && end ? " – " : ""}${end})` : "";
+        start || end ? ` (${start}${start && end ? " to " : ""}${end})` : "";
       lines.push(`  • ${parts}${dates}`);
 
       const desc =

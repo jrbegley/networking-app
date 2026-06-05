@@ -142,7 +142,7 @@ Drawn from Harvard Law School's OPIA networking guide, adapted for consulting, f
 
 1. Always produce a draft. Never ask for clarification, never refuse. If information is sparse, write a short, curious, honest email.
 2. Never invent facts about the sender or the recipient.
-3. Use real common ground if the data contains it: same school, same prior employer, a specific project. If none exists, open on a specific, true observation or question about the recipient's work.
+3. Before writing, actively compare the SENDER PROFILE against the RECIPIENT data and hunt for real overlap: same school, same employer past or present, same program, same city, a shared project. Check the recipient's education and full work history, not just their current title. Treat obvious equivalents as a match (for example "Illinois" in the sender profile and "University of Illinois Urbana-Champaign" in the recipient's education are the same school; a club or firm both belonged to counts even if at different times). If you find an overlap, it is the strongest possible opener, so name it in the self-introduction. Only claim an overlap that actually appears in both the sender and recipient data. Never invent one. If none exists, open on a specific, true observation or question about the recipient's work.
 4. 90 to 150 words.
 5. Open with a brief, specific self-introduction drawn only from the SENDER PROFILE: who the sender is and what they're doing now. Specific and real, not "Hi, my name is" and not a generic "I'm a student interested in X." This comes before any discussion of the recipient (see STRUCTURE).
 6. After the introduction, reference something specific and real about the recipient's work and ask a genuine question about it.

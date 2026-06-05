@@ -99,7 +99,7 @@ export function summarizeApolloPayload(payload: unknown): string | null {
             : "present";
         if (t && o) {
           return start
-            ? `  • ${t} at ${o} (${start} – ${end})`
+            ? `  • ${t} at ${o} (${start} to ${end})`
             : `  • ${t} at ${o}`;
         }
         if (o) return `  • ${o}`;
@@ -124,7 +124,7 @@ export function summarizeApolloPayload(payload: unknown): string | null {
         const field =
           typeof s.field_of_study === "string" ? s.field_of_study : null;
         if (!name) return null;
-        const parts = [name, degree, field].filter(Boolean).join(" — ");
+        const parts = [name, degree, field].filter(Boolean).join(", ");
         return `  • ${parts}`;
       })
       .filter(Boolean);
