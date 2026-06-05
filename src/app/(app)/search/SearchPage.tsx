@@ -117,6 +117,7 @@ export function SearchPage() {
         </h1>
         <p className="mt-1 text-sm text-slate-600">
           Search Apollo&apos;s database. Describe who you&apos;re looking for in plain English.
+          LinkedIn URLs are looked up via Tavily when you add a contact.
         </p>
       </div>
 

@@ -128,6 +128,55 @@ export async function extractTavily(
   return (await res.json()) as TavilyExtractResponse;
 }
 
+// ── LinkedIn URL finder ────────────────────────────────────────────────
+
+/**
+ * Try to find a LinkedIn profile URL for someone given their name,
+ * company, and title. Uses a site-restricted Tavily search and extracts
+ * the first linkedin.com/in/ URL from results.
+ *
+ * Returns null if nothing confident is found — callers should save the
+ * contact without a LinkedIn URL rather than storing a wrong one.
+ */
+export async function findLinkedInUrl(opts: {
+  firstName: string;
+  lastName: string; // may be just an initial e.g. "S"
+  company: string;
+  title?: string | null;
+}): Promise<string | null> {
+  const { firstName, lastName, company, title } = opts;
+
+  // Build a targeted query. Title helps disambiguate common names at large firms.
+  const namePart = `"${firstName} ${lastName}"`;
+  const titlePart = title ? ` "${title}"` : "";
+  const query = `site:linkedin.com/in ${namePart} "${company}"${titlePart}`;
+
+  let response: TavilySearchResponse;
+  try {
+    response = await searchTavily(query, {
+      includeDomains: ["linkedin.com"],
+      maxResults: 3,
+      topic: "general",
+    });
+  } catch {
+    return null;
+  }
+
+  // Pull the first linkedin.com/in/ URL from results
+  for (const result of response.results) {
+    const match = result.url.match(/https?:\/\/(www\.)?linkedin\.com\/in\/[^/?#\s]+/i);
+    if (match) return match[0];
+  }
+
+  // Also check the answer text in case Tavily surfaced it there
+  if (response.answer) {
+    const match = response.answer.match(/https?:\/\/(www\.)?linkedin\.com\/in\/[^/?#\s]+/i);
+    if (match) return match[0];
+  }
+
+  return null;
+}
+
 // ── Combined payload (what we persist as a research_artifact) ──────────
 
 export type TavilyNamedSearch = {

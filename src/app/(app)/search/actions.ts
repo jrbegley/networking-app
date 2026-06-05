@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { searchPeople, type ApolloSearchPerson } from "@/lib/apollo";
 import { translateSearchQuery } from "@/lib/claude";
+import { findLinkedInUrl } from "@/lib/tavily";
 import { revalidatePath } from "next/cache";
 
 export type SearchResult = ApolloSearchPerson & {
@@ -145,9 +146,30 @@ export async function addContactsFromSearch(
   } = await supabase.auth.getUser();
   if (!user) return { added: 0, error: "Not signed in." };
 
+  // Resolve LinkedIn URLs in parallel via Tavily before inserting.
+  // Apollo free tier only returns first name + last initial, so we search
+  // site:linkedin.com/in with name + company + title. Null if not found.
+  const linkedinUrls = await Promise.all(
+    people.map((person) => {
+      const firstName = person.first_name ?? person.name?.split(" ")[0] ?? "";
+      const lastName = person.last_name ?? person.name?.split(" ").slice(1).join(" ") ?? "";
+      const company = person.organization?.name ?? "";
+      if (!firstName || !company) return Promise.resolve(null);
+      return findLinkedInUrl({
+        firstName,
+        lastName,
+        company,
+        title: person.title ?? null,
+      });
+    }),
+  );
+
   let added = 0;
 
-  for (const person of people) {
+  for (let i = 0; i < people.length; i++) {
+    const person = people[i];
+    const linkedinUrl = linkedinUrls[i] ?? person.linkedin_url ?? null;
+
     // Upsert company first
     let companyId: string | null = null;
     if (person.organization?.name) {
@@ -178,7 +200,7 @@ export async function addContactsFromSearch(
       owner_id: user.id,
       name: person.name ?? [person.first_name, person.last_name].filter(Boolean).join(" ") ?? "Unknown",
       title: person.title ?? null,
-      linkedin_url: person.linkedin_url ?? null,
+      linkedin_url: linkedinUrl,
       apollo_id: person.id ?? null,
       company_id: companyId,
       current_stage: "identified",
