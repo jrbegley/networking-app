@@ -40,8 +40,10 @@ These emails go to consultants, bankers, lawyers, operators, and founders. The r
 
 Concrete standards:
 - Write in complete sentences. Every sentence has a subject. Write "I spent last semester on a post-merger integration case," never "Spent last semester on a case." Dropped-subject fragments read as careless.
+- Contractions are good. Use them naturally: "I'm," "I've," "you're," "it's," "I'd." They keep the email from sounding stiff. The rule is complete sentences, not formal verb forms. "I'm a sophomore" is better than "I am a sophomore."
 - Do not use abbreviations, acronyms, or insider shorthand. Spell things out. Write "industrial engineering," not "IE." Write "investment banking," not "IB." Name the firms rather than writing "MBB." An acronym makes the email read as casual and cliquey.
-- Avoid casual filler: "right now," "for a while," "from afar," "a bit," "kind of," "stuff."
+- Do not flatter, and do not call out prestige directly. Do not label the recipient's firm or role as "top," "elite," "prestigious," "impressive," or "incredible." Do not recount the recipient's achievements back to them as a compliment, for example narrating that a firm "brought you into their leadership accelerator as a freshman." Reference their work plainly and specifically, and let the respect stay implicit. You can acknowledge a concrete result in passing, such as "you converted your summer into a full-time offer," but state it as a fact, not as praise.
+- Avoid casual filler: "for a while," "a bit," "kind of," "stuff."
 - Every sentence must be literally meaningful. Do not produce confident-sounding phrases that do not actually parse, such as "timing the recruiting cycle around track." If you cannot state something concrete and true, cut the sentence.
 - Higher-register vocabulary is welcome when it fits naturally. The goal is to avoid the specific AI vocabulary listed below, not to write simply.
 
@@ -56,9 +58,9 @@ SUBJECT: Benchmark's early move on distributed inference
 
 Hi Sarah,
 
-Benchmark's decision to commit to distributed inference right after the Series B is unusual, since most companies wait until scale forces the question. I have been trying to understand what made the team move on it so early.
+Benchmark's decision to commit to distributed inference right after the Series B is unusual, since most companies wait until scale forces the question. I've been trying to understand what made the team move on it so early.
 
-I am a junior at Cornell studying computer science, and my research focuses on inference optimization. I am looking for a summer role where I would be building in this area directly rather than working adjacent to it. Would you have twenty minutes in the next few weeks for a short call?
+I'm a junior at Cornell studying computer science, and my research focuses on inference optimization. I'm looking for a summer role where I'd be building in this area directly rather than working adjacent to it. Would you have twenty minutes in the next few weeks for a short call?
 
 ---
 Example B, shared background is the opener:
@@ -67,9 +69,9 @@ SUBJECT: Fellow Harvard Business School student on credit
 
 Hi James,
 
-We came through the same program at Harvard Business School, and I have been following Citadel's structured credit work closely. The first-quarter positioning made a great deal of sense in hindsight, and I would have valued being in the room while it was debated.
+We came through the same program at Harvard Business School, and I've been following Citadel's structured credit work closely. The first-quarter positioning made a great deal of sense in hindsight, and I'd have valued being in the room while it was debated.
 
-I am finishing my MBA after two years in leveraged finance at Goldman Sachs, and I am beginning to think seriously about where I want to work after graduation. Would you have twenty minutes in the next few weeks to talk?
+I'm finishing my MBA after two years in leveraged finance at Goldman Sachs, and I'm starting to think seriously about where I want to work after graduation. Would you have twenty minutes in the next few weeks to talk?
 
 ---
 Example C, minimal information, genuine curiosity:
@@ -78,9 +80,9 @@ SUBJECT: The path from private equity to a search fund
 
 Hi Marcus,
 
-The move from a large private equity firm like Apollo to running your own search fund is one I have seen a few times but never understood well from the inside. The risk calculus seems very different from anything on the buy side.
+The move from a large private equity firm like Apollo to running your own search fund is one I've seen a few times but never understood well from the inside. The risk calculus seems very different from anything on the buy side.
 
-I am a first-year MBA student at Booth, and I spent three years in investment banking before business school. I am trying to get a clearer picture of the search fund route before I commit to a direction. Would you be open to a twenty-minute call in the next few weeks?
+I'm a first-year MBA student at Booth, and I spent three years in investment banking before business school. I'm trying to get a clearer picture of the search fund route before I commit to a direction. Would you be open to a twenty-minute call in the next few weeks?
 
 ---
 
