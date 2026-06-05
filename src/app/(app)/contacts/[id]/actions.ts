@@ -10,7 +10,12 @@ import {
 } from "@/lib/tavily";
 import { scrapeLinkedInProfile } from "@/lib/apify";
 import { isApolloShellResponse } from "@/lib/apollo-summary";
-import { draftOutreachEmail, type Draft } from "@/lib/claude";
+import {
+  draftOutreachEmail,
+  refineOutreachEmail,
+  type Draft,
+  type DraftContext,
+} from "@/lib/claude";
 import { revalidatePath } from "next/cache";
 
 // NB: maxDuration lives on page.tsx — server-action files can only export
@@ -681,42 +686,33 @@ export async function saveResearchNotes(
 
 // ── Email drafting ─────────────────────────────────────────────────────
 
-export type DraftState = {
+export type DraftResult = {
   error: string | null;
   draft: Draft | null;
 };
 
+export type SaveDraftResult = {
+  error: string | null;
+  saved: boolean;
+};
+
+type SupabaseServer = Awaited<ReturnType<typeof createClient>>;
+
 /**
- * Generate a Claude-drafted outreach email for a contact, using whatever
- * research we already have on file (no Apollo call here — purely uses
- * cached artifacts).
- *
- * Draft is NOT persisted in this version. User sees it; we'll persist
- * (and let them edit / push to Outlook Drafts) in a follow-up.
+ * Load everything the drafter needs for a contact: contact fields, the latest
+ * LinkedIn + Apollo artifacts, and the sender's profile. Shared by generate
+ * and refine. Tavily is intentionally excluded — its firm research was
+ * producing hallucinated specifics in the email body.
  */
-export async function draftEmail(
-  _prevState: DraftState,
-  formData: FormData,
-): Promise<DraftState> {
-  const contactId = String(formData.get("contactId") ?? "");
-  if (!contactId) {
-    return { error: "Missing contact id.", draft: null };
-  }
-
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return { error: "Not signed in.", draft: null };
-  }
-
-  // Parallel fetches: contact, latest LinkedIn, Apollo, sender profile.
-  // Tavily is intentionally NOT fed into the draft right now — its firm
-  // research was producing hallucinated specifics in the email body.
-  const [contactRes, linkedinRes, apolloRes, profileRes] =
-    await Promise.all([
+async function loadDraftContext(
+  supabase: SupabaseServer,
+  userId: string,
+  contactId: string,
+): Promise<
+  | { error: string; context: null; currentStage: null }
+  | { error: null; context: DraftContext; currentStage: string }
+> {
+  const [contactRes, linkedinRes, apolloRes, profileRes] = await Promise.all([
     supabase
       .from("contacts")
       .select(
@@ -744,40 +740,39 @@ export async function draftEmail(
     supabase
       .from("profiles")
       .select("bio, resume_text, outreach_goal, linkedin_url")
-      .eq("id", user.id)
+      .eq("id", userId)
       .maybeSingle(),
   ]);
 
   if (contactRes.error) {
     return {
       error: `Couldn't load contact: ${contactRes.error.message}`,
-      draft: null,
+      context: null,
+      currentStage: null,
     };
   }
-  const contact = contactRes.error ? null : contactRes.data;
+  const contact = contactRes.data;
   if (!contact) {
-    return { error: "Contact not found.", draft: null };
+    return { error: "Contact not found.", context: null, currentStage: null };
   }
-
-  const latestLinkedin = linkedinRes.data;
-  const latestApollo = apolloRes.data;
-  const profile = profileRes.data;
 
   const company = Array.isArray(contact.company)
     ? (contact.company[0] ?? null)
     : ((contact.company as { name: string; industry: string | null } | null) ??
       null);
+  const profile = profileRes.data;
 
-  let draft: Draft;
-  try {
-    draft = await draftOutreachEmail({
+  return {
+    error: null,
+    currentStage: contact.current_stage,
+    context: {
       contactName: contact.name,
       contactTitle: contact.title,
       companyName: company?.name ?? null,
       companyIndustry: company?.industry ?? null,
       linkedinUrl: contact.linkedin_url,
-      linkedinPayload: latestLinkedin?.payload ?? null,
-      apolloPayload: latestApollo?.payload ?? null,
+      linkedinPayload: linkedinRes.data?.payload ?? null,
+      apolloPayload: apolloRes.data?.payload ?? null,
       tavilyPayload: null,
       userNotes: contact.notes,
       researchNotes: contact.research_notes ?? null,
@@ -787,7 +782,48 @@ export async function draftEmail(
         outreachGoal: profile?.outreach_goal ?? null,
         linkedinUrl: profile?.linkedin_url ?? null,
       },
-    });
+    },
+  };
+}
+
+/** Persist the single current draft on the contact row. */
+async function persistDraft(
+  supabase: SupabaseServer,
+  contactId: string,
+  draft: Draft,
+): Promise<void> {
+  await supabase
+    .from("contacts")
+    .update({
+      draft_subject: draft.subject,
+      draft_body: draft.body,
+      draft_updated_at: new Date().toISOString(),
+    })
+    .eq("id", contactId);
+}
+
+/**
+ * Generate a Claude-drafted outreach email for a contact, using cached
+ * research (no fresh Apollo call). Persists the result as the contact's
+ * current draft and advances researched -> drafted.
+ */
+export async function generateDraftForContact(
+  contactId: string,
+): Promise<DraftResult> {
+  if (!contactId) return { error: "Missing contact id.", draft: null };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in.", draft: null };
+
+  const loaded = await loadDraftContext(supabase, user.id, contactId);
+  if (!loaded.context) return { error: loaded.error, draft: null };
+
+  let draft: Draft;
+  try {
+    draft = await draftOutreachEmail(loaded.context);
   } catch (e) {
     return {
       error: e instanceof Error ? e.message : "Drafting failed.",
@@ -795,15 +831,94 @@ export async function draftEmail(
     };
   }
 
-  // Auto-advance researched -> drafted so the stage reflects reality
-  if (contact.current_stage === "researched") {
+  await persistDraft(supabase, contactId, draft);
+
+  if (loaded.currentStage === "researched") {
     await supabase
       .from("contacts")
       .update({ current_stage: "drafted" })
       .eq("id", contactId);
-    revalidatePath(`/contacts/${contactId}`);
-    revalidatePath("/contacts");
   }
+  revalidatePath(`/contacts/${contactId}`);
+  revalidatePath("/contacts");
 
   return { error: null, draft };
+}
+
+/**
+ * Revise the contact's current draft per a free-form instruction. Operates on
+ * the subject/body currently in the editor (which may have unsaved manual
+ * edits) and persists the revised result.
+ */
+export async function refineDraftForContact(
+  contactId: string,
+  instruction: string,
+  currentSubject: string,
+  currentBody: string,
+): Promise<DraftResult> {
+  if (!contactId) return { error: "Missing contact id.", draft: null };
+  if (!instruction.trim()) {
+    return { error: "Tell Claude what to change.", draft: null };
+  }
+  if (!currentBody.trim()) {
+    return { error: "Generate a draft first.", draft: null };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in.", draft: null };
+
+  const loaded = await loadDraftContext(supabase, user.id, contactId);
+  if (!loaded.context) return { error: loaded.error, draft: null };
+
+  let draft: Draft;
+  try {
+    draft = await refineOutreachEmail({
+      ...loaded.context,
+      currentSubject,
+      currentBody,
+      instruction,
+    });
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Refine failed.",
+      draft: null,
+    };
+  }
+
+  await persistDraft(supabase, contactId, draft);
+  revalidatePath(`/contacts/${contactId}`);
+
+  return { error: null, draft };
+}
+
+/** Save a manually edited draft (subject + body) as the contact's current draft. */
+export async function saveDraftForContact(
+  contactId: string,
+  subject: string,
+  body: string,
+): Promise<SaveDraftResult> {
+  if (!contactId) return { error: "Missing contact id.", saved: false };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in.", saved: false };
+
+  const { error } = await supabase
+    .from("contacts")
+    .update({
+      draft_subject: subject.trim() || null,
+      draft_body: body,
+      draft_updated_at: new Date().toISOString(),
+    })
+    .eq("id", contactId);
+
+  if (error) return { error: error.message, saved: false };
+
+  revalidatePath(`/contacts/${contactId}`);
+  return { error: null, saved: true };
 }

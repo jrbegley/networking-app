@@ -197,15 +197,8 @@ function formatSenderProfile(p: SenderProfile): string | null {
     : null;
 }
 
-/**
- * Generate an outreach email draft given contact context.
- *
- * Two cache breakpoints to maximize hit rate:
- *   1. The system prompt (stable across all users)
- *   2. The sender's profile (stable across all drafts for one user)
- * The per-contact context is fresh per request.
- */
-export async function draftOutreachEmail(opts: {
+/** Everything the drafter needs about one recipient + the sender. */
+export type DraftContext = {
   contactName: string;
   contactTitle: string | null;
   companyName: string | null;
@@ -218,7 +211,10 @@ export async function draftOutreachEmail(opts: {
   /** Free-form research the user typed in to supplement enrichment. */
   researchNotes: string | null;
   sender: SenderProfile;
-}): Promise<Draft> {
+};
+
+/** Build the recipient + research block shared by drafting and refining. */
+function buildRecipientContext(opts: DraftContext): string {
   const ctxLines: string[] = [];
   ctxLines.push("RECIPIENT:");
   ctxLines.push(`- Name: ${opts.contactName}`);
@@ -258,26 +254,37 @@ export async function draftOutreachEmail(opts: {
     );
   }
 
-  const userMessage = `Draft an outreach email.\n\n${ctxLines.join("\n")}`;
-  const senderProfileText = formatSenderProfile(opts.sender);
+  return ctxLines.join("\n");
+}
 
-  // Build system array. Always include the base prompt (cached). If the user
-  // has a profile, append it as a second cached block.
-  const systemBlocks: Anthropic.TextBlockParam[] = [
+/**
+ * Two cache breakpoints to maximize hit rate:
+ *   1. The system prompt (stable across all users)
+ *   2. The sender's profile (stable across all drafts for one user)
+ */
+function buildSystemBlocks(sender: SenderProfile): Anthropic.TextBlockParam[] {
+  const blocks: Anthropic.TextBlockParam[] = [
     {
       type: "text",
       text: DRAFT_SYSTEM_PROMPT,
       cache_control: { type: "ephemeral" },
     },
   ];
+  const senderProfileText = formatSenderProfile(sender);
   if (senderProfileText) {
-    systemBlocks.push({
+    blocks.push({
       type: "text",
       text: senderProfileText,
       cache_control: { type: "ephemeral" },
     });
   }
+  return blocks;
+}
 
+async function runDraftModel(
+  systemBlocks: Anthropic.TextBlockParam[],
+  userMessage: string,
+): Promise<Draft> {
   const response = await client.messages.create({
     model: MODEL,
     max_tokens: 600,
@@ -301,6 +308,41 @@ export async function draftOutreachEmail(opts: {
     cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
     cacheCreationTokens: response.usage.cache_creation_input_tokens ?? 0,
   };
+}
+
+/** Generate a fresh outreach email draft from contact context. */
+export async function draftOutreachEmail(opts: DraftContext): Promise<Draft> {
+  const userMessage = `Draft an outreach email.\n\n${buildRecipientContext(opts)}`;
+  return runDraftModel(buildSystemBlocks(opts.sender), userMessage);
+}
+
+/**
+ * Revise an existing draft based on a free-form user instruction. Reuses the
+ * same locked system prompt, so every style and sourcing rule still applies to
+ * the revision. The instruction only directs WHAT to change, not HOW to write.
+ */
+export async function refineOutreachEmail(
+  opts: DraftContext & {
+    currentSubject: string;
+    currentBody: string;
+    instruction: string;
+  },
+): Promise<Draft> {
+  const userMessage = [
+    "Revise an existing outreach email draft based on the user's instruction below.",
+    "",
+    buildRecipientContext(opts),
+    "",
+    "CURRENT DRAFT:",
+    `SUBJECT: ${opts.currentSubject}`,
+    "BODY:",
+    opts.currentBody,
+    "",
+    `THE USER WANTS THIS CHANGED: ${opts.instruction}`,
+    "",
+    "Apply the instruction and return the full revised email. Keep everything the instruction does not ask you to change. Follow every rule in the system prompt, including the sourcing discipline and the ban on em dashes. Output in the exact SUBJECT/BODY format, nothing else.",
+  ].join("\n");
+  return runDraftModel(buildSystemBlocks(opts.sender), userMessage);
 }
 
 function parseDraft(text: string): { subject: string; body: string } {

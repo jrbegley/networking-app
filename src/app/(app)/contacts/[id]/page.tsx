@@ -32,7 +32,7 @@ export default async function ContactDetailPage({ params }: PageProps) {
     .from("contacts")
     .select(
       `id, name, title, email, linkedin_url, current_stage, notes,
-       research_notes, created_at, updated_at,
+       research_notes, draft_subject, draft_body, created_at, updated_at,
        company:companies(id, name, domain, industry, size_range, linkedin_url)`,
     )
     .eq("id", id)
@@ -215,6 +215,8 @@ export default async function ContactDetailPage({ params }: PageProps) {
       <DraftPanel
         contactId={contact.id}
         hasResearch={!!latestLinkedin || (TAVILY_ENABLED && !!latestTavily)}
+        initialSubject={contact.draft_subject ?? ""}
+        initialBody={contact.draft_body ?? ""}
       />
 
       {/* ── Company panel ───────────────────────────────────────────── */}

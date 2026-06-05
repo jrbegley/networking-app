@@ -1,23 +1,122 @@
 "use client";
 
-import { useActionState } from "react";
-import { draftEmail, type DraftState } from "./actions";
+import { useState } from "react";
+import {
+  generateDraftForContact,
+  refineDraftForContact,
+  saveDraftForContact,
+} from "./actions";
+import type { Draft } from "@/lib/claude";
 
-const initialState: DraftState = { error: null, draft: null };
+type Usage = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+};
+
+type Status = { kind: "success" | "error" | "info"; text: string } | null;
 
 export function DraftPanel({
   contactId,
   hasResearch,
+  initialSubject,
+  initialBody,
 }: {
   contactId: string;
   hasResearch: boolean;
+  initialSubject: string;
+  initialBody: string;
 }) {
-  const [state, formAction, pending] = useActionState(
-    draftEmail,
-    initialState,
-  );
+  const [subject, setSubject] = useState(initialSubject);
+  const [body, setBody] = useState(initialBody);
 
-  const draft = state.draft;
+  // Last persisted version, for the dirty indicator.
+  const [savedSubject, setSavedSubject] = useState(initialSubject);
+  const [savedBody, setSavedBody] = useState(initialBody);
+
+  const [instruction, setInstruction] = useState("");
+  const [history, setHistory] = useState<string[]>([]);
+
+  const [usage, setUsage] = useState<Usage | null>(null);
+  const [status, setStatus] = useState<Status>(null);
+  const [busy, setBusy] = useState<null | "generate" | "refine" | "save">(null);
+
+  const hasDraft = body.trim().length > 0;
+  const dirty = subject !== savedSubject || body !== savedBody;
+
+  function applyDraft(d: Draft) {
+    // Generate and refine both persist server-side, so the new draft IS the
+    // saved snapshot — not dirty.
+    setSubject(d.subject);
+    setBody(d.body);
+    setSavedSubject(d.subject);
+    setSavedBody(d.body);
+    setUsage({
+      inputTokens: d.inputTokens,
+      outputTokens: d.outputTokens,
+      cacheReadTokens: d.cacheReadTokens,
+    });
+  }
+
+  async function handleGenerate() {
+    setBusy("generate");
+    setStatus(null);
+    try {
+      const r = await generateDraftForContact(contactId);
+      if (r.error || !r.draft) {
+        setStatus({ kind: "error", text: r.error ?? "Couldn't draft." });
+        return;
+      }
+      applyDraft(r.draft);
+      setStatus({ kind: "success", text: "Draft generated and saved." });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleSave() {
+    setBusy("save");
+    setStatus(null);
+    try {
+      const r = await saveDraftForContact(contactId, subject, body);
+      if (r.error) {
+        setStatus({ kind: "error", text: r.error });
+        return;
+      }
+      setSavedSubject(subject);
+      setSavedBody(body);
+      setStatus({ kind: "success", text: "Saved." });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleRefine() {
+    const trimmed = instruction.trim();
+    if (!trimmed) return;
+    setBusy("refine");
+    setStatus(null);
+    try {
+      const r = await refineDraftForContact(contactId, trimmed, subject, body);
+      if (r.error || !r.draft) {
+        setStatus({ kind: "error", text: r.error ?? "Couldn't revise." });
+        return;
+      }
+      applyDraft(r.draft);
+      setHistory((h) => [...h, trimmed]);
+      setInstruction("");
+      setStatus({ kind: "success", text: "Revised by Claude." });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function handleCopy() {
+    navigator.clipboard
+      .writeText(`Subject: ${subject}\n\n${body}`)
+      .then(() => setStatus({ kind: "success", text: "Copied to clipboard." }))
+      .catch(() => setStatus({ kind: "error", text: "Couldn't copy." }));
+  }
 
   return (
     <section className="rounded-lg bg-white p-6 ring-1 ring-slate-200">
@@ -32,58 +131,151 @@ export function DraftPanel({
               : "Will draft from contact basics. Enrich first for a stronger draft."}
           </p>
         </div>
-        <form action={formAction}>
-          <input type="hidden" name="contactId" value={contactId} />
-          <button
-            type="submit"
-            disabled={pending}
-            className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {pending ? "Drafting…" : draft ? "Redraft" : "Draft with Claude"}
-          </button>
-        </form>
+        <button
+          type="button"
+          onClick={handleGenerate}
+          disabled={busy !== null}
+          className="shrink-0 rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy === "generate"
+            ? "Drafting…"
+            : hasDraft
+              ? "Redraft from scratch"
+              : "Draft with Claude"}
+        </button>
       </div>
 
-      {state.error && (
-        <p className="mt-3 text-sm text-red-600">{state.error}</p>
+      {status && (
+        <p
+          className={`mt-3 text-sm ${
+            status.kind === "success"
+              ? "text-emerald-700"
+              : status.kind === "error"
+                ? "text-red-600"
+                : "text-slate-500"
+          }`}
+        >
+          {status.text}
+        </p>
       )}
 
-      {draft && (
+      {hasDraft && (
         <div className="mt-5 space-y-4">
+          {/* Editable subject */}
           <div>
-            <p className="text-xs uppercase tracking-wide text-slate-500">
-              Subject
-            </p>
-            <p className="mt-1 text-sm font-medium text-slate-900">
-              {draft.subject}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs uppercase tracking-wide text-slate-500">
-              Body
-            </p>
-            <pre className="mt-1 whitespace-pre-wrap rounded-md bg-slate-50 p-4 font-sans text-sm text-slate-900 ring-1 ring-slate-200">
-              {draft.body}
-            </pre>
-          </div>
-          <div className="flex items-center justify-between text-xs text-slate-500">
-            <span>
-              {draft.inputTokens} in · {draft.outputTokens} out
-              {draft.cacheReadTokens > 0 && (
-                <> · {draft.cacheReadTokens} cache hit</>
-              )}
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard
-                  .writeText(`Subject: ${draft.subject}\n\n${draft.body}`)
-                  .catch(() => {});
-              }}
-              className="rounded-md px-2 py-1 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+            <label
+              htmlFor="draft_subject"
+              className="block text-xs uppercase tracking-wide text-slate-500"
             >
-              Copy to clipboard
-            </button>
+              Subject
+            </label>
+            <input
+              id="draft_subject"
+              type="text"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+            />
+          </div>
+
+          {/* Editable body */}
+          <div>
+            <label
+              htmlFor="draft_body"
+              className="block text-xs uppercase tracking-wide text-slate-500"
+            >
+              Body
+            </label>
+            <textarea
+              id="draft_body"
+              rows={12}
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 font-sans text-sm leading-relaxed text-slate-900 shadow-sm focus:border-slate-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-500"
+            />
+          </div>
+
+          {/* Action row */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={busy !== null || !dirty}
+                className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {busy === "save" ? "Saving…" : dirty ? "Save" : "Saved"}
+              </button>
+              <button
+                type="button"
+                onClick={handleCopy}
+                disabled={busy !== null}
+                className="rounded-md px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+              >
+                Copy
+              </button>
+              {dirty && (
+                <span className="text-xs text-amber-600">Unsaved changes</span>
+              )}
+            </div>
+            {usage && (
+              <span className="text-xs text-slate-400">
+                {usage.inputTokens} in · {usage.outputTokens} out
+                {usage.cacheReadTokens > 0 && (
+                  <> · {usage.cacheReadTokens} cached</>
+                )}
+              </span>
+            )}
+          </div>
+
+          {/* Refine with Claude */}
+          <div className="rounded-md border border-slate-200 bg-slate-50/60 p-4">
+            <p className="text-sm font-medium text-slate-900">
+              Refine with Claude
+            </p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Tell Claude what to change. It revises the email above using the
+              same rules. Edits you made by hand are included.
+            </p>
+
+            {history.length > 0 && (
+              <ul className="mt-3 space-y-1">
+                {history.map((h, i) => (
+                  <li
+                    key={i}
+                    className="flex items-start gap-2 text-xs text-slate-600"
+                  >
+                    <span className="select-none text-slate-400">↳</span>
+                    <span>{h}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="mt-3 flex gap-2">
+              <input
+                type="text"
+                value={instruction}
+                onChange={(e) => setInstruction(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleRefine();
+                  }
+                }}
+                placeholder="e.g. make it shorter, or mention our shared class"
+                disabled={busy !== null}
+                className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:opacity-50"
+              />
+              <button
+                type="button"
+                onClick={handleRefine}
+                disabled={busy !== null || !instruction.trim()}
+                className="shrink-0 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {busy === "refine" ? "Revising…" : "Send"}
+              </button>
+            </div>
           </div>
         </div>
       )}
