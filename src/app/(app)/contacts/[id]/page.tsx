@@ -15,6 +15,7 @@ import { TavilyButton } from "./TavilyButton";
 import { LinkedInButton } from "./LinkedInButton";
 import { DraftPanel } from "./DraftPanel";
 import { ResearchNotes } from "./ResearchNotes";
+import { EditContact } from "./EditContact";
 import { summarizeTavilyPayload } from "@/lib/tavily-summary";
 import { summarizeLinkedInPayload } from "@/lib/linkedin-summary";
 
@@ -113,11 +114,25 @@ export default async function ContactDetailPage({ params }: PageProps) {
               )}
             </p>
           </div>
-          <span
-            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${STAGE_BADGE_CLASS[stage]}`}
-          >
-            {STAGE_LABEL[stage]}
-          </span>
+          <div className="flex items-center gap-3">
+            <span
+              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${STAGE_BADGE_CLASS[stage]}`}
+            >
+              {STAGE_LABEL[stage]}
+            </span>
+            <EditContact
+              initial={{
+                contactId: contact.id,
+                name: contact.name,
+                title: contact.title ?? "",
+                email: contact.email ?? "",
+                linkedinUrl: contact.linkedin_url ?? "",
+                company: company?.name ?? "",
+                stage: contact.current_stage,
+                notes: contact.notes ?? "",
+              }}
+            />
+          </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-4 text-sm">
           {contact.email && (

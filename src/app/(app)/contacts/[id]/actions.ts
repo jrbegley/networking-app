@@ -223,7 +223,7 @@ export async function enrichWithLinkedin(
 
   const { data: contact, error: contactErr } = await supabase
     .from("contacts")
-    .select("id, linkedin_url, email, title, current_stage, company_id")
+    .select("id, linkedin_url, email, title, current_stage, company_id, name")
     .eq("id", contactId)
     .maybeSingle();
 
@@ -310,15 +310,55 @@ export async function enrichWithLinkedin(
     };
   }
 
-  // Backfill empty contact fields from the scraped profile
+  // Backfill / update contact fields from the scraped profile.
+  // HarvestAPI fields: experience[0].position = title, experience[0].companyName = company
+  const exp = Array.isArray((profile as Record<string, unknown>)["experience"])
+    ? ((profile as Record<string, unknown>)["experience"] as Record<string, unknown>[])
+    : [];
+  const currentJob = exp[0] ?? null;
+
+  const scrapedTitle =
+    (typeof currentJob?.["position"] === "string" ? currentJob["position"] : null) ??
+    profile.headline ??
+    null;
+  const scrapedCompany =
+    typeof currentJob?.["companyName"] === "string"
+      ? (currentJob["companyName"] as string).trim()
+      : null;
+
   const contactUpdate: Record<string, unknown> = {};
-  if (!contact.title) {
-    const newTitle = profile.headline ?? profile.currentPosition?.title;
-    if (newTitle) contactUpdate.title = newTitle;
-  }
+  if (!contact.title && scrapedTitle) contactUpdate.title = scrapedTitle;
   if (contact.current_stage === "identified") {
     contactUpdate.current_stage = "researched";
   }
+
+  // ── Auto-update company from LinkedIn ─────────────────────────────────
+  // Always sync the company when LinkedIn returns one — even if we already
+  // have a company_id, the scraped data is more authoritative.
+  if (scrapedCompany) {
+    const { data: existingCompany } = await supabase
+      .from("companies")
+      .select("id")
+      .eq("owner_id", user.id)
+      .eq("name", scrapedCompany)
+      .maybeSingle();
+
+    let companyId: string;
+    if (existingCompany) {
+      companyId = existingCompany.id;
+    } else {
+      const { data: newCompany } = await supabase
+        .from("companies")
+        .insert({ owner_id: user.id, name: scrapedCompany })
+        .select("id")
+        .single();
+      companyId = newCompany?.id;
+    }
+    if (companyId && companyId !== contact.company_id) {
+      contactUpdate.company_id = companyId;
+    }
+  }
+
   if (Object.keys(contactUpdate).length > 0) {
     await supabase.from("contacts").update(contactUpdate).eq("id", contactId);
   }
@@ -493,6 +533,77 @@ export async function researchWithTavily(
       : "Saved. Tavily found no useful data.";
 
   return { error: null, cached: false, message: msg };
+}
+
+// ── Edit contact ──────────────────────────────────────────────────────
+
+export type EditContactState = {
+  error: string | null;
+  saved: boolean;
+};
+
+export async function editContact(
+  _prevState: EditContactState,
+  formData: FormData,
+): Promise<EditContactState> {
+  const contactId = String(formData.get("contactId") ?? "");
+  if (!contactId) return { error: "Missing contact id.", saved: false };
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in.", saved: false };
+
+  const name = String(formData.get("name") ?? "").trim();
+  const title = String(formData.get("title") ?? "").trim() || null;
+  const email = String(formData.get("email") ?? "").trim() || null;
+  const linkedinUrl = String(formData.get("linkedin_url") ?? "").trim() || null;
+  const companyName = String(formData.get("company") ?? "").trim();
+  const stage = String(formData.get("stage") ?? "");
+  const notes = String(formData.get("notes") ?? "").trim() || null;
+
+  if (!name) return { error: "Name is required.", saved: false };
+
+  // Resolve company
+  let companyId: string | null = null;
+  if (companyName) {
+    const { data: existing } = await supabase
+      .from("companies")
+      .select("id")
+      .eq("owner_id", user.id)
+      .eq("name", companyName)
+      .maybeSingle();
+
+    if (existing) {
+      companyId = existing.id;
+    } else {
+      const { data: created } = await supabase
+        .from("companies")
+        .insert({ owner_id: user.id, name: companyName })
+        .select("id")
+        .single();
+      companyId = created?.id ?? null;
+    }
+  }
+
+  const { error } = await supabase
+    .from("contacts")
+    .update({
+      name,
+      title,
+      email,
+      linkedin_url: linkedinUrl,
+      company_id: companyId,
+      current_stage: stage || undefined,
+      notes,
+    })
+    .eq("id", contactId);
+
+  if (error) return { error: error.message, saved: false };
+
+  revalidatePath(`/contacts/${contactId}`);
+  revalidatePath("/contacts");
+  revalidatePath("/dashboard");
+  return { error: null, saved: true };
 }
 
 // ── Research notes ─────────────────────────────────────────────────────
