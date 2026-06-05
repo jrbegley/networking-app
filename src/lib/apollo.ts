@@ -118,6 +118,14 @@ export async function searchPeople(
   }
 
   const data = await res.json();
+  // Log the first result's keys in dev so we can see the actual response shape
+  if (process.env.NODE_ENV !== "production" && data.people?.length) {
+    console.log("[Apollo api_search] first person keys:", Object.keys(data.people[0]));
+    console.log("[Apollo api_search] first person sample:", JSON.stringify(data.people[0], null, 2));
+  } else if (data.people?.length) {
+    console.log("[Apollo api_search] first person keys:", Object.keys(data.people[0]));
+  }
+
   return {
     people: (data.people ?? []) as ApolloSearchPerson[],
     pagination: data.pagination ?? {
