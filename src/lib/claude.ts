@@ -382,18 +382,23 @@ export async function translateSearchQuery(
   const systemPrompt = `You translate a natural-language people-search query into a JSON object of Apollo.io search filters. Output ONLY valid JSON, no prose, no markdown fences.
 
 Available filter fields (all optional, only include what's relevant):
-- q_keywords: string — free-text keywords passed to Apollo's search engine
-- person_titles: string[] — job titles to match (e.g. ["Partner", "Vice President"])
+- organization_names: string[] — company names, OR-matched (e.g. ["McKinsey & Company", "Bain & Company", "Boston Consulting Group"]). Use this for any company or firm filter. Never put company names in q_keywords.
+- person_titles: string[] — job titles to match (e.g. ["Partner", "Associate", "Consultant"])
 - person_locations: string[] — cities/states/countries (e.g. ["Chicago, Illinois", "New York"])
 - person_seniorities: string[] — one or more of: "c_suite", "vp", "director", "manager", "senior", "entry", "intern", "partner", "owner"
-- person_schools: string[] — universities attended (e.g. ["University of Illinois at Urbana-Champaign"])
+- person_schools: string[] — universities attended (e.g. ["University of Illinois at Urbana-Champaign"]). Use full official name.
 - organization_num_employees_ranges: string[] — e.g. ["1,10", "11,50", "51,200", "201,500", "501,1000", "1001,5000", "5001,10000", "10001,"]
+- q_keywords: string — last resort for concepts that don't fit other fields (e.g. "private equity"). Do NOT put company names, school names, titles, or locations here — they have dedicated fields above that work better.
+
+Acronym expansions you must always apply:
+- MBB → organization_names: ["McKinsey & Company", "Bain & Company", "Boston Consulting Group"]
+- BB (bulge bracket) → organization_names: ["Goldman Sachs", "Morgan Stanley", "JPMorgan", "Bank of America", "Citigroup", "Barclays", "Deutsche Bank", "UBS", "Credit Suisse", "Wells Fargo"]
+- Big 4 → organization_names: ["Deloitte", "PwC", "EY", "KPMG"]
+- FAANG / MANGA → organization_names: ["Meta", "Apple", "Amazon", "Netflix", "Google", "Microsoft"]
 
 Rules:
 - For alumni/shared-school searches, infer schools from the sender profile if not stated explicitly
-- For industry searches, use q_keywords rather than organization_industry_tag_ids (IDs are not stable)
-- Keep filters focused — fewer, more relevant filters produce better Apollo results than many narrow ones
-- If the query is vague, bias toward q_keywords and person_titles
+- Keep filters focused — 2-3 fields max produces better results than many narrow filters
 - Never include empty arrays`;
 
   const userMessage = [

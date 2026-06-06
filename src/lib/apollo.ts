@@ -50,6 +50,7 @@ export type ApolloSearchFilters = {
   person_locations?: string[];
   person_seniorities?: string[];
   person_schools?: string[];
+  organization_names?: string[];   // OR match across company names
   organization_industry_tag_ids?: string[];
   organization_num_employees_ranges?: string[];
 };
