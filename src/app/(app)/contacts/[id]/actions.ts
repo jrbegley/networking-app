@@ -18,7 +18,8 @@ import {
   type DraftContext,
 } from "@/lib/claude";
 import { revalidatePath } from "next/cache";
-import { createOutlookDraft, fetchMessagesFromSender } from "@/lib/graph";
+import { createOutlookDraft } from "@/lib/graph";
+import { syncContactEmails } from "@/lib/inbox-sync";
 
 // NB: maxDuration lives on page.tsx — server-action files can only export
 // async functions, not constants.
@@ -960,16 +961,9 @@ export async function sendToOutlookDrafts(
 
   if (result.error) return { error: result.error, webLink: null };
 
-  // Log an interaction row so the timeline knows a draft was pushed
-  await supabase.from("interactions").insert({
-    owner_id: user.id,
-    contact_id: contactId,
-    type: "email_sent",
-    subject,
-    body,
-    outlook_message_id: result.messageId ?? null,
-    occurred_at: new Date().toISOString(),
-  });
+  // Deliberately NOT logged as an interaction here: a draft in the Outlook
+  // Drafts folder hasn't been sent. The email enters the timeline (and the
+  // stage advances to "sent") when inbox sync finds it in Sent Items.
 
   revalidatePath(`/contacts/${contactId}`);
   return { error: null, webLink: result.webLink };
@@ -983,9 +977,8 @@ export type SyncResult = {
 };
 
 /**
- * Query Graph for messages from this contact's email address and log any
- * we haven't seen before (deduplicated by outlook_message_id).
- * Auto-advances sent -> replied if new messages are found.
+ * Sync sent + received emails for this contact via the shared inbox-sync
+ * module (Sent Items detection, dedupe, forward-only stage advancement).
  */
 export async function syncContactInbox(contactId: string): Promise<SyncResult> {
   if (!contactId) return { error: "Missing contact id.", newCount: 0 };
@@ -998,7 +991,7 @@ export async function syncContactInbox(contactId: string): Promise<SyncResult> {
 
   const { data: contact } = await supabase
     .from("contacts")
-    .select("email, current_stage")
+    .select("id, email, current_stage")
     .eq("id", contactId)
     .maybeSingle();
 
@@ -1006,45 +999,16 @@ export async function syncContactInbox(contactId: string): Promise<SyncResult> {
     return { error: "Contact has no email address.", newCount: 0 };
   }
 
-  const { messages, error } = await fetchMessagesFromSender(user.id, contact.email);
-  if (error) return { error, newCount: 0 };
-  if (messages.length === 0) return { error: null, newCount: 0 };
-
-  // Load already-logged message IDs for this contact to deduplicate
-  const { data: existing } = await supabase
-    .from("interactions")
-    .select("outlook_message_id")
-    .eq("contact_id", contactId)
-    .eq("type", "email_received")
-    .not("outlook_message_id", "is", null);
-
-  const seenIds = new Set((existing ?? []).map((r) => r.outlook_message_id));
-  const newMessages = messages.filter((m) => !seenIds.has(m.id));
-
-  if (newMessages.length === 0) return { error: null, newCount: 0 };
-
-  await supabase.from("interactions").insert(
-    newMessages.map((m) => ({
-      owner_id: user.id,
-      contact_id: contactId,
-      type: "email_received",
-      subject: m.subject,
-      body: m.bodyText,
-      outlook_message_id: m.id,
-      occurred_at: m.receivedAt,
-    })),
-  );
-
-  if (contact.current_stage === "sent") {
-    await supabase
-      .from("contacts")
-      .update({ current_stage: "replied" })
-      .eq("id", contactId);
-  }
+  const r = await syncContactEmails(supabase, user.id, {
+    id: contact.id,
+    email: contact.email,
+    current_stage: contact.current_stage,
+  });
+  if (r.error) return { error: r.error, newCount: 0 };
 
   revalidatePath(`/contacts/${contactId}`);
   revalidatePath("/contacts");
-  return { error: null, newCount: newMessages.length };
+  return { error: null, newCount: r.received + r.sent };
 }
 
 // ── Log received email ────────────────────────────────────────────────

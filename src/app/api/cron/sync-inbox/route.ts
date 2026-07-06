@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { fetchMessagesFromSender } from "@/lib/graph";
+import { syncContactEmails, type SyncContactInput } from "@/lib/inbox-sync";
 
 // Vercel calls this route on the cron schedule defined in vercel.json.
 // Protected by CRON_SECRET so only Vercel (and you) can trigger it.
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   // Get all users who have Outlook connected
   const { data: profiles, error: profilesErr } = await supabase
     .from("profiles")
-    .select("id, outlook_access_token, outlook_refresh_token, outlook_token_expires_at")
+    .select("id")
     .not("outlook_access_token", "is", null);
 
   if (profilesErr) {
@@ -28,91 +28,36 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: profilesErr.message }, { status: 500 });
   }
 
-  let totalNew = 0;
+  let totalReceived = 0;
+  let totalSent = 0;
   let totalAdvanced = 0;
 
   for (const profile of profiles ?? []) {
-    try {
-      const result = await syncUserInbox(supabase, profile.id);
-      totalNew += result.newCount;
-      totalAdvanced += result.advanced;
-    } catch (e) {
-      console.error(`Cron: error syncing user ${profile.id}:`, e);
-    }
-  }
-
-  console.log(`Cron sync-inbox: ${totalNew} new emails, ${totalAdvanced} contacts advanced`);
-  return NextResponse.json({ ok: true, newEmails: totalNew, advanced: totalAdvanced });
-}
-
-type SupabaseClient = ReturnType<typeof createServiceClient>;
-
-async function syncUserInbox(
-  supabase: SupabaseClient,
-  userId: string,
-): Promise<{ newCount: number; advanced: number }> {
-  const { data: contacts } = await supabase
-    .from("contacts")
-    .select("id, email, current_stage")
-    .eq("owner_id", userId)
-    .not("email", "is", null);
-
-  if (!contacts?.length) return { newCount: 0, advanced: 0 };
-
-  const contactIds = contacts.map((c) => c.id);
-  const { data: existing } = await supabase
-    .from("interactions")
-    .select("contact_id, outlook_message_id")
-    .in("contact_id", contactIds)
-    .eq("type", "email_received")
-    .not("outlook_message_id", "is", null);
-
-  const seenByContact = new Map<string, Set<string>>();
-  for (const row of existing ?? []) {
-    if (!seenByContact.has(row.contact_id)) {
-      seenByContact.set(row.contact_id, new Set());
-    }
-    seenByContact.get(row.contact_id)!.add(row.outlook_message_id);
-  }
-
-  let newCount = 0;
-  const toAdvance: string[] = [];
-
-  for (const contact of contacts) {
-    const { messages, error } = await fetchMessagesFromSender(
-      userId,
-      contact.email!,
-      90,
-      supabase, // service client — token lookup must also bypass RLS
-    );
-    if (error || !messages.length) continue;
-
-    const seen = seenByContact.get(contact.id) ?? new Set();
-    const newMessages = messages.filter((m) => !seen.has(m.id));
-    if (!newMessages.length) continue;
-
-    await supabase.from("interactions").insert(
-      newMessages.map((m) => ({
-        owner_id: userId,
-        contact_id: contact.id,
-        type: "email_received",
-        subject: m.subject,
-        body: m.bodyText,
-        outlook_message_id: m.id,
-        occurred_at: m.receivedAt,
-      })),
-    );
-
-    newCount += newMessages.length;
-    if (contact.current_stage === "sent") toAdvance.push(contact.id);
-  }
-
-  if (toAdvance.length > 0) {
-    await supabase
+    const { data: contacts } = await supabase
       .from("contacts")
-      .update({ current_stage: "replied" })
-      .in("id", toAdvance);
+      .select("id, email, current_stage")
+      .eq("owner_id", profile.id)
+      .not("email", "is", null);
+
+    for (const contact of (contacts ?? []) as SyncContactInput[]) {
+      try {
+        const r = await syncContactEmails(supabase, profile.id, contact);
+        totalReceived += r.received;
+        totalSent += r.sent;
+        if (r.newStage) totalAdvanced++;
+      } catch (e) {
+        console.error(`Cron: error syncing contact ${contact.id}:`, e);
+      }
+    }
   }
 
-  return { newCount, advanced: toAdvance.length };
+  console.log(
+    `Cron sync-inbox: ${totalReceived} received, ${totalSent} sent, ${totalAdvanced} contacts advanced`,
+  );
+  return NextResponse.json({
+    ok: true,
+    newEmails: totalReceived,
+    sentEmails: totalSent,
+    advanced: totalAdvanced,
+  });
 }

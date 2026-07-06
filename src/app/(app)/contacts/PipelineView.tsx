@@ -46,10 +46,14 @@ export function PipelineView({
       const r = await syncAllInboxes();
       if (r.error) {
         setSyncStatus(`Error: ${r.error}`);
-      } else if (r.newCount === 0) {
-        setSyncStatus(`Checked ${r.contactsChecked} contacts — no new emails.`);
+      } else if (r.newCount === 0 && r.sentCount === 0) {
+        setSyncStatus(`Checked ${r.contactsChecked} contacts. Nothing new.`);
       } else {
-        setSyncStatus(`${r.newCount} new email${r.newCount === 1 ? "" : "s"} logged across ${r.contactsChecked} contacts.`);
+        const parts = [];
+        if (r.newCount > 0) parts.push(`${r.newCount} received`);
+        if (r.sentCount > 0) parts.push(`${r.sentCount} sent`);
+        const stages = r.advanced > 0 ? `, ${r.advanced} stage update${r.advanced === 1 ? "" : "s"}` : "";
+        setSyncStatus(`Logged ${parts.join(", ")}${stages}.`);
       }
     });
   }

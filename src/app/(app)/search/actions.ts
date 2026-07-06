@@ -208,54 +208,19 @@ export async function addContactsFromSearch(
     }
   }
 
-  // Step 2: Resolve LinkedIn URLs, all contacts in parallel. Each resolution
-  // searches LinkedIn + the web for candidates and has Claude verify which
-  // one is actually this person (see lib/linkedin-resolver.ts). A returned
-  // URL is verified; null means no confident match — we save null rather
-  // than a wrong profile.
-  const linkedinUrls = await Promise.all(
-    people.map(async (person) => {
-      const enriched = enrichedMap.get(person.id);
-      // Apollo's own linkedin_url comes from its matched record — trust it.
-      if (enriched?.linkedin_url) return enriched.linkedin_url;
-
-      const firstName = enriched?.first_name ?? person.first_name ?? "";
-      if (!firstName) return null;
-
-      // Real last name from enrichment beats the Claude guess from the
-      // obfuscated pattern. Track which one we're using: a guess may be
-      // used to SEARCH but never to VERIFY.
-      const realLast = enriched?.last_name ?? null;
-      const guessLast = person.last_name ?? null;
-
-      // api_search omits city/state; the enriched record has them.
-      const location = [
-        person.city ?? enriched?.city,
-        person.state ?? enriched?.state,
-        person.country ?? enriched?.country,
-      ]
-        .filter(Boolean)
-        .join(", ");
-
-      const { url } = await resolveLinkedInUrl({
-        firstName,
-        lastName: realLast ?? guessLast,
-        lastNameTrusted: !!realLast,
-        company: person.organization?.name ?? enriched?.organization?.name ?? null,
-        title: person.title ?? enriched?.title ?? null,
-        location: location || null,
-      });
-      return url;
-    }),
-  );
-
+  // Step 2: Insert contacts FIRST, with whatever Apollo enrichment gave us.
+  // LinkedIn resolution (step 3) involves slow external calls; if the
+  // function times out mid-resolution, contacts and the Apollo credits
+  // already spent on them must not be lost.
   let added = 0;
   let withLinkedIn = 0;
+  const pendingResolution: Array<{
+    contactId: string;
+    person: ApolloSearchPerson;
+  }> = [];
 
-  for (let i = 0; i < people.length; i++) {
-    const person = people[i];
+  for (const person of people) {
     const enriched = enrichedMap.get(person.id);
-    const linkedinUrl = linkedinUrls[i] ?? null;
 
     // Upsert company
     let companyId: string | null = null;
@@ -284,25 +249,94 @@ export async function addContactsFromSearch(
       }
     }
 
-    const { error } = await supabase.from("contacts").insert({
-      owner_id: user.id,
-      name: buildName(person, enriched),
-      title: person.title ?? enriched?.title ?? null,
-      email: enriched?.email ?? null,
-      linkedin_url: linkedinUrl,
-      apollo_id: person.id ?? null,
-      company_id: companyId,
-      current_stage: "identified",
-      source: "apollo_search",
-    });
+    // Apollo's own linkedin_url comes from its matched record — trust it.
+    const apolloUrl = enriched?.linkedin_url ?? null;
 
-    if (!error) {
+    const { data: inserted, error } = await supabase
+      .from("contacts")
+      .insert({
+        owner_id: user.id,
+        name: buildName(person, enriched),
+        title: person.title ?? enriched?.title ?? null,
+        email: enriched?.email ?? null,
+        linkedin_url: apolloUrl,
+        apollo_id: person.id ?? null,
+        company_id: companyId,
+        current_stage: "identified",
+        source: "apollo_search",
+      })
+      .select("id")
+      .single();
+
+    if (!error && inserted) {
       added++;
-      if (linkedinUrl) withLinkedIn++;
+      if (apolloUrl) {
+        withLinkedIn++;
+      } else {
+        pendingResolution.push({ contactId: inserted.id, person });
+      }
     }
   }
 
   revalidatePath("/contacts");
   revalidatePath("/search");
+
+  // Step 3: Resolve missing LinkedIn URLs, max 4 contacts at a time (each
+  // resolution runs an Apify LinkedIn search; unbounded parallelism queues
+  // on Apify's concurrency limits and can blow the function timeout).
+  // Each resolved URL is written immediately, so partial progress sticks.
+  // A returned URL is verified by Claude against the person's known facts
+  // (see lib/linkedin-resolver.ts); null means no confident match — we
+  // keep null rather than storing a wrong profile.
+  for (let i = 0; i < pendingResolution.length; i += 4) {
+    const chunk = pendingResolution.slice(i, i + 4);
+    await Promise.all(
+      chunk.map(async ({ contactId, person }) => {
+        const enriched = enrichedMap.get(person.id);
+        const firstName = enriched?.first_name ?? person.first_name ?? "";
+        if (!firstName) return;
+
+        // Real last name from enrichment beats the Claude guess from the
+        // obfuscated pattern. A guess may be used to SEARCH but never to
+        // VERIFY.
+        const realLast = enriched?.last_name ?? null;
+        const guessLast = person.last_name ?? null;
+
+        // api_search omits city/state; the enriched record has them.
+        const location = [
+          person.city ?? enriched?.city,
+          person.state ?? enriched?.state,
+          person.country ?? enriched?.country,
+        ]
+          .filter(Boolean)
+          .join(", ");
+
+        try {
+          const { url } = await resolveLinkedInUrl({
+            firstName,
+            lastName: realLast ?? guessLast,
+            lastNameTrusted: !!realLast,
+            company:
+              person.organization?.name ?? enriched?.organization?.name ?? null,
+            title: person.title ?? enriched?.title ?? null,
+            location: location || null,
+          });
+          if (!url) return;
+
+          // May fail on the (owner, linkedin_url) unique index if another
+          // contact already claimed this URL — leave null in that case.
+          const { error } = await supabase
+            .from("contacts")
+            .update({ linkedin_url: url })
+            .eq("id", contactId);
+          if (!error) withLinkedIn++;
+        } catch {
+          // Resolution is best-effort; the contact itself is already saved.
+        }
+      }),
+    );
+  }
+
+  revalidatePath("/contacts");
   return { added, withLinkedIn, error: null };
 }

@@ -217,6 +217,79 @@ export async function fetchMessagesFromSender(
   return { messages, error: null };
 }
 
+export type GraphSentMessage = {
+  id: string;
+  subject: string | null;
+  bodyText: string | null;
+  sentAt: string;
+};
+
+/**
+ * Fetch messages the user actually SENT to a specific recipient, from the
+ * Sent Items folder. This is how the app learns that a pushed draft (or any
+ * email written directly in Outlook) really went out.
+ *
+ * Uses $search (KQL "to:") because $filter can't target the toRecipients
+ * collection; recipient and date are then re-checked client-side since
+ * $search is fuzzy and can't combine with $filter.
+ */
+export async function fetchSentMessagesTo(
+  userId: string,
+  recipientEmail: string,
+  lookbackDays = 90,
+  db?: SupabaseClient,
+): Promise<{ messages: GraphSentMessage[]; error: string | null }> {
+  let accessToken: string;
+  try {
+    accessToken = await getAccessToken(userId, db);
+  } catch (e) {
+    return { messages: [], error: (e as Error).message };
+  }
+
+  const select = "id,subject,body,sentDateTime,toRecipients";
+  const url =
+    `${GRAPH_BASE}/me/mailFolders/sentitems/messages` +
+    `?$search=${encodeURIComponent(`"to:${recipientEmail}"`)}` +
+    `&$select=${select}&$top=50`;
+
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Prefer: 'outlook.body-content-type="text"',
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("Graph fetchSentMessages failed:", res.status, text);
+    return { messages: [], error: `Graph API error ${res.status}` };
+  }
+
+  const since = Date.now() - lookbackDays * 86400_000;
+  const wanted = recipientEmail.toLowerCase();
+
+  const json = await res.json();
+  const messages: GraphSentMessage[] = ((json.value ?? []) as Record<string, unknown>[])
+    .filter((m) => {
+      const sentAt = Date.parse((m.sentDateTime as string) ?? "");
+      if (!Number.isFinite(sentAt) || sentAt < since) return false;
+      const recipients = (m.toRecipients as Array<{ emailAddress?: { address?: string } }>) ?? [];
+      return recipients.some(
+        (r) => r.emailAddress?.address?.toLowerCase() === wanted,
+      );
+    })
+    .map((m) => ({
+      id: m.id as string,
+      subject: (m.subject as string | null) ?? null,
+      bodyText: ((m.body as Record<string, string> | null)?.content ?? null),
+      sentAt: m.sentDateTime as string,
+    }));
+
+  messages.sort((a, b) => b.sentAt.localeCompare(a.sentAt));
+
+  return { messages, error: null };
+}
+
 /**
  * Disconnects Outlook by clearing the stored tokens. Does NOT revoke the
  * token server-side (would need an extra Graph call and the user can revoke
