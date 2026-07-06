@@ -71,7 +71,11 @@ export function SearchPage() {
       if (r.error) {
         setError(r.error);
       } else {
-        setStatus(`Added ${person.name ?? "contact"} to pipeline.`);
+        setStatus(
+          r.withLinkedIn > 0
+            ? `Added ${person.name ?? "contact"} to pipeline (LinkedIn verified).`
+            : `Added ${person.name ?? "contact"} to pipeline (no confident LinkedIn match).`,
+        );
         setResults((prev) =>
           prev.map((p) => (p.id === person.id ? { ...p, inPipeline: true } : p)),
         );
@@ -94,7 +98,10 @@ export function SearchPage() {
         setError(r.error);
       } else {
         const addedIds = new Set(toAdd.map((p) => p.id));
-        setStatus(`Added ${r.added} contact${r.added === 1 ? "" : "s"} to pipeline.`);
+        setStatus(
+          `Added ${r.added} contact${r.added === 1 ? "" : "s"} to pipeline` +
+            ` (${r.withLinkedIn} with verified LinkedIn).`,
+        );
         setResults((prev) =>
           prev.map((p) => (addedIds.has(p.id) ? { ...p, inPipeline: true } : p)),
         );

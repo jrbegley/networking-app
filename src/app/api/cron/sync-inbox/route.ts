@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { fetchMessagesFromSender } from "@/lib/graph";
 
 // Vercel calls this route on the cron schedule defined in vercel.json.
@@ -12,12 +12,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Use service role to query across all users — this route runs outside
-  // of a user session. RLS is bypassed intentionally here.
-  const { createClient: createServiceClient } = await import(
-    "@/lib/supabase/server"
-  );
-  const supabase = await createServiceClient();
+  // Service role: this route runs outside of a user session, so the
+  // cookie-scoped client would see zero rows under RLS. Bypassing RLS
+  // here is intentional — access is gated by CRON_SECRET above.
+  const supabase = createServiceClient();
 
   // Get all users who have Outlook connected
   const { data: profiles, error: profilesErr } = await supabase
@@ -47,7 +45,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ ok: true, newEmails: totalNew, advanced: totalAdvanced });
 }
 
-type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
+type SupabaseClient = ReturnType<typeof createServiceClient>;
 
 async function syncUserInbox(
   supabase: SupabaseClient,
@@ -81,7 +79,12 @@ async function syncUserInbox(
   const toAdvance: string[] = [];
 
   for (const contact of contacts) {
-    const { messages, error } = await fetchMessagesFromSender(userId, contact.email!);
+    const { messages, error } = await fetchMessagesFromSender(
+      userId,
+      contact.email!,
+      90,
+      supabase, // service client — token lookup must also bypass RLS
+    );
     if (error || !messages.length) continue;
 
     const seen = seenByContact.get(contact.id) ?? new Set();

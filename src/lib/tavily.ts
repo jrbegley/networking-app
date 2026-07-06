@@ -128,67 +128,71 @@ export async function extractTavily(
   return (await res.json()) as TavilyExtractResponse;
 }
 
-// ── LinkedIn URL finder ────────────────────────────────────────────────
+// ── LinkedIn candidate finder ──────────────────────────────────────────
+
+export type TavilyLinkedInCandidate = {
+  url: string;
+  title: string; // search-result title, e.g. "Jane Doe - VP Sales - Acme | LinkedIn"
+  snippet: string;
+};
 
 /**
- * Try to find a LinkedIn profile URL for someone given their name,
- * company, and title. Uses a site-restricted Tavily search and extracts
- * the first linkedin.com/in/ URL from results.
+ * Web-search for LinkedIn profile candidates matching a name + company.
+ * Returns ALL linkedin.com/in hits with their result title and snippet so
+ * a verification step can decide which (if any) is the right person.
  *
- * Returns null if nothing confident is found — callers should save the
- * contact without a LinkedIn URL rather than storing a wrong one.
+ * Deliberately does NOT pick a winner — grabbing the first hit is how
+ * wrong profiles ended up in the database.
  */
-export async function findLinkedInUrl(opts: {
+export async function findLinkedInCandidates(opts: {
   firstName: string;
-  lastName: string;
-  company: string;
+  lastName: string | null;
+  company: string | null;
   title?: string | null;
-  email?: string | null; // preferred signal when available
-}): Promise<string | null> {
-  const { firstName, lastName, company, title, email } = opts;
+}): Promise<TavilyLinkedInCandidate[]> {
+  const { firstName, lastName, company, title } = opts;
 
-  let query: string;
-
-  if (email) {
-    // Email is the most precise signal — domain ties directly to the person.
-    // Search for their name + email domain on LinkedIn.
-    const domain = email.split("@")[1] ?? "";
-    const isInitialOnly = lastName.replace(".", "").trim().length <= 1;
-    const namePart = isInitialOnly ? `"${firstName}"` : `"${firstName} ${lastName}"`;
-    query = domain
-      ? `site:linkedin.com/in ${namePart} "${domain}"`
-      : `site:linkedin.com/in ${namePart} "${company}"`;
-  } else {
-    const isInitialOnly = lastName.replace(".", "").trim().length <= 1;
-    const namePart = isInitialOnly ? `"${firstName}"` : `"${firstName} ${lastName}"`;
-    const titlePart = title ? ` "${title}"` : "";
-    query = `site:linkedin.com/in ${namePart} "${company}"${titlePart}`;
-  }
+  const hasLastName = !!lastName && lastName.replace(".", "").trim().length > 1;
+  const namePart = hasLastName ? `"${firstName} ${lastName}"` : `"${firstName}"`;
+  const companyPart = company ? ` "${company}"` : "";
+  const titlePart = !company && title ? ` "${title}"` : "";
+  const query = `site:linkedin.com/in ${namePart}${companyPart}${titlePart}`;
 
   let response: TavilySearchResponse;
   try {
     response = await searchTavily(query, {
       includeDomains: ["linkedin.com"],
-      maxResults: 3,
+      maxResults: 5,
       topic: "general",
     });
   } catch {
-    return null;
+    return [];
   }
 
-  // Pull the first linkedin.com/in/ URL from results
+  const seen = new Set<string>();
+  const candidates: TavilyLinkedInCandidate[] = [];
   for (const result of response.results) {
     const match = result.url.match(/https?:\/\/(www\.)?linkedin\.com\/in\/[^/?#\s]+/i);
-    if (match) return match[0];
+    if (!match) continue;
+    const url = normalizeLinkedInUrl(match[0]);
+    if (seen.has(url)) continue;
+    seen.add(url);
+    candidates.push({
+      url,
+      title: result.title ?? "",
+      snippet: (result.content ?? "").slice(0, 300),
+    });
   }
+  return candidates;
+}
 
-  // Also check the answer text in case Tavily surfaced it there
-  if (response.answer) {
-    const match = response.answer.match(/https?:\/\/(www\.)?linkedin\.com\/in\/[^/?#\s]+/i);
-    if (match) return match[0];
-  }
-
-  return null;
+/** Lowercase host+slug, strip www and trailing slash, so URLs dedupe cleanly. */
+export function normalizeLinkedInUrl(url: string): string {
+  return url
+    .replace(/^http:/i, "https:")
+    .replace(/\/\/www\./i, "//")
+    .replace(/\/+$/, "")
+    .toLowerCase();
 }
 
 // ── Combined payload (what we persist as a research_artifact) ──────────

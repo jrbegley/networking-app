@@ -506,3 +506,103 @@ Rules:
   }
   return people.map(() => null);
 }
+
+// ── LinkedIn candidate verification ────────────────────────────────────
+
+export type LinkedInMatchFacts = {
+  firstName: string;
+  /** Real last name when known (e.g. from Apollo enrichment); null when we
+   * only have a guess. NEVER pass an inferred/guessed last name here. */
+  lastName: string | null;
+  company: string | null;
+  title: string | null;
+  location: string | null;
+};
+
+export type LinkedInMatchCandidate = {
+  url: string;
+  name: string | null;
+  headline: string | null;
+  location: string | null;
+  snippet: string | null;
+  source: "linkedin_search" | "web_search";
+};
+
+/**
+ * Given trusted facts about a person and a list of LinkedIn profile
+ * candidates, pick the one that is actually them — or null if none can be
+ * confirmed. A wrong URL is far worse than no URL, so this only returns a
+ * candidate on a "high" confidence verdict.
+ */
+export async function pickLinkedInMatch(
+  facts: LinkedInMatchFacts,
+  candidates: LinkedInMatchCandidate[],
+): Promise<number | null> {
+  if (!candidates.length) return null;
+
+  const systemPrompt = `You verify which LinkedIn profile (if any) belongs to a specific person. You are given FACTS about the person from a B2B database, and CANDIDATES from LinkedIn search and web search.
+
+Output ONLY valid JSON, no prose: {"match": <candidate index or null>, "confidence": "high" | "medium" | "low"}
+
+Matching rules, applied strictly:
+- The candidate's first name must match the fact first name (allow nicknames: Mike/Michael, Liz/Elizabeth, and accented variants).
+- If a fact last name is given, the candidate's last name must match it (allow suffixes like PharmD, CFA, and hyphenated/married forms that CONTAIN the fact last name).
+- If NO fact last name is given, you must rely entirely on corroboration: the candidate's headline, company, or location must clearly match the fact company AND (title or location). First name alone is never enough.
+- Corroboration: "high" confidence requires the name rules to pass AND at least one strong corroborating signal — the fact company appearing in the candidate's headline/snippet, an equivalent job title, or a matching location alongside a matching full name.
+- People change jobs. If the name matches exactly (full first + last) and location matches, but the headline shows a different company, that can still be "medium", not a rejection — but never "high" without something tying them to the fact company or title.
+- Common names (multiple plausible candidates with the same name) demand extra caution: if two candidates could both plausibly be the person, return null.
+- If no candidate satisfies the rules, "match" is null.
+
+A wrong match pollutes a CRM and leads to embarrassing misdirected outreach. When in doubt, return null.`;
+
+  const userMessage = JSON.stringify({
+    facts: {
+      firstName: facts.firstName,
+      lastName: facts.lastName, // null = unknown, do not guess
+      company: facts.company,
+      title: facts.title,
+      location: facts.location,
+    },
+    candidates: candidates.map((c, i) => ({
+      index: i,
+      name: c.name,
+      headline: c.headline,
+      location: c.location,
+      snippet: c.snippet,
+      source: c.source,
+      urlSlug: c.url.split("/in/")[1] ?? "",
+    })),
+  });
+
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 150,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userMessage }],
+  });
+
+  const text = response.content
+    .filter((c): c is Anthropic.TextBlock => c.type === "text")
+    .map((c) => c.text)
+    .join("")
+    .trim();
+
+  try {
+    const clean = text.replace(/^```json?\s*/i, "").replace(/```\s*$/i, "").trim();
+    const parsed = JSON.parse(clean) as {
+      match: number | null;
+      confidence: string;
+    };
+    if (
+      typeof parsed.match === "number" &&
+      parsed.match >= 0 &&
+      parsed.match < candidates.length &&
+      parsed.confidence === "high"
+    ) {
+      return parsed.match;
+    }
+  } catch {
+    // fall through
+  }
+  return null;
+}

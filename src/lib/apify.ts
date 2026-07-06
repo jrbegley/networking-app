@@ -16,6 +16,7 @@
 
 const APIFY_BASE = "https://api.apify.com/v2";
 const ACTOR_PATH = "harvestapi~linkedin-profile-scraper"; // tilde-encoded /
+const SEARCH_BY_NAME_ACTOR_PATH = "harvestapi~linkedin-profile-search-by-name";
 
 // ── Output schema (partial — pulls fields we use) ────────────────────────
 
@@ -122,4 +123,57 @@ export async function scrapeLinkedInProfile(
 
   const items = (await res.json()) as LinkedInProfile[];
   return Array.isArray(items) && items.length > 0 ? items[0] : null;
+}
+
+// ── LinkedIn people search by name ───────────────────────────────────────
+//
+// HarvestAPI's search-by-name actor runs a real LinkedIn people search and
+// returns the actual search hits (name, headline, location, profile URL).
+// "Short" mode is the cheap tier — enough to identify the right person
+// without scraping full profiles.
+
+export type LinkedInSearchHit = {
+  id?: string;
+  name?: string;
+  position?: string; // headline, e.g. "VP of Sales at Acme"
+  location?: { linkedinText?: string };
+  linkedinUrl?: string;
+  publicIdentifier?: string;
+};
+
+export async function searchLinkedInProfilesByName(opts: {
+  firstName: string;
+  lastName: string;
+  maxItems?: number;
+}): Promise<LinkedInSearchHit[]> {
+  const token = process.env.APIFY_API_TOKEN;
+  if (!token) throw new Error("APIFY_API_TOKEN not set");
+
+  const res = await fetch(
+    `${APIFY_BASE}/acts/${SEARCH_BY_NAME_ACTOR_PATH}/run-sync-get-dataset-items`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        profileScraperMode: "Short",
+        firstName: opts.firstName,
+        lastName: opts.lastName,
+        maxItems: opts.maxItems ?? 8,
+      }),
+      cache: "no-store",
+    },
+  );
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `Apify search-by-name ${res.status}: ${text.slice(0, 300) || res.statusText}`,
+    );
+  }
+
+  const items = (await res.json()) as LinkedInSearchHit[];
+  return Array.isArray(items) ? items.filter((i) => i.linkedinUrl) : [];
 }

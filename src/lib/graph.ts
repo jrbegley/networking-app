@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { getSiteUrl } from "@/lib/site-url";
 
@@ -13,9 +14,13 @@ type TokenRow = {
 /**
  * Returns a valid access token for the signed-in user, refreshing if needed.
  * Throws if the user hasn't connected Outlook.
+ *
+ * `db` — pass a service-role client when calling from a context with no
+ * user session (cron). Defaults to the cookie-scoped client, which under
+ * RLS can only read the signed-in user's own profile.
  */
-async function getAccessToken(userId: string): Promise<string> {
-  const supabase = await createClient();
+async function getAccessToken(userId: string, db?: SupabaseClient): Promise<string> {
+  const supabase = db ?? (await createClient());
   const { data: profile, error } = await supabase
     .from("profiles")
     .select(
@@ -161,18 +166,22 @@ export async function fetchMessagesFromSender(
   userId: string,
   senderEmail: string,
   lookbackDays = 90,
+  db?: SupabaseClient,
 ): Promise<{ messages: GraphMessage[]; error: string | null }> {
   let accessToken: string;
   try {
-    accessToken = await getAccessToken(userId);
+    accessToken = await getAccessToken(userId, db);
   } catch (e) {
     return { messages: [], error: (e as Error).message };
   }
 
   const since = new Date(Date.now() - lookbackDays * 86400_000).toISOString();
-  const filter = `from/emailAddress/address eq '${senderEmail}' and receivedDateTime ge ${since}`;
+  // NB: receivedDateTime must come FIRST in the filter, and $orderby must be
+  // omitted — combining a from/emailAddress filter with $orderby makes Graph
+  // reject the query with 400 InefficientFilter. We sort client-side instead.
+  const filter = `receivedDateTime ge ${since} and from/emailAddress/address eq '${senderEmail}'`;
   const select = "id,subject,body,receivedDateTime,from";
-  const url = `${GRAPH_BASE}/me/messages?$filter=${encodeURIComponent(filter)}&$select=${select}&$top=50&$orderby=receivedDateTime desc`;
+  const url = `${GRAPH_BASE}/me/messages?$filter=${encodeURIComponent(filter)}&$select=${select}&$top=50`;
 
   const res = await fetch(url, {
     headers: {
@@ -201,6 +210,9 @@ export async function fetchMessagesFromSender(
       receivedAt: m.receivedDateTime as string,
     }),
   );
+
+  // Newest first (we dropped $orderby to keep Graph happy — see above).
+  messages.sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
 
   return { messages, error: null };
 }

@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { searchPeople, bulkEnrichByApolloId, type ApolloSearchPerson } from "@/lib/apollo";
 import { translateSearchQuery, inferLastNamesFromObfuscated } from "@/lib/claude";
-import { findLinkedInUrl } from "@/lib/tavily";
+import { resolveLinkedInUrl } from "@/lib/linkedin-resolver";
 import { revalidatePath } from "next/cache";
 
 export type SearchResult = ApolloSearchPerson & {
@@ -153,14 +153,22 @@ export async function searchApollo(
 
 export type AddContactsResult = {
   added: number;
+  withLinkedIn: number;
   error: string | null;
 };
 
 /**
- * Add one or more Apollo search results directly to the pipeline as
- * 'identified' contacts. Skips any that are already in the pipeline.
+ * Best display name. Prefers Apollo enrichment (the person's REAL name)
+ * over anything reconstructed from obfuscated search data.
  */
-function buildName(person: ApolloSearchPerson): string {
+function buildName(
+  person: ApolloSearchPerson,
+  enriched: { name: string | null; first_name: string | null; last_name: string | null } | undefined,
+): string {
+  if (enriched?.name) return enriched.name;
+  if (enriched?.first_name && enriched?.last_name) {
+    return `${enriched.first_name} ${enriched.last_name}`;
+  }
   if (person.name) return person.name;
   const first = person.first_name ?? "";
   const last = person.last_name ?? "";           // inferred by Claude
@@ -171,19 +179,24 @@ function buildName(person: ApolloSearchPerson): string {
   return first;
 }
 
+/**
+ * Add one or more Apollo search results directly to the pipeline as
+ * 'identified' contacts. Skips any that are already in the pipeline.
+ */
 export async function addContactsFromSearch(
   people: ApolloSearchPerson[],
 ): Promise<AddContactsResult> {
-  if (!people.length) return { added: 0, error: null };
+  if (!people.length) return { added: 0, withLinkedIn: 0, error: null };
 
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { added: 0, error: "Not signed in." };
+  if (!user) return { added: 0, withLinkedIn: 0, error: "Not signed in." };
 
-  // Step 1: Bulk enrich via Apollo (1 credit/person) to get verified email.
-  // Process in batches of 10 (API limit).
+  // Step 1: Bulk enrich via Apollo (1 credit/person) to get verified email
+  // AND the person's real name — search results only carry an obfuscated
+  // last name. Process in batches of 10 (API limit).
   const apolloIds = people.map((p) => p.id).filter(Boolean);
   const enrichedMap = new Map<string, Awaited<ReturnType<typeof bulkEnrichByApolloId>>[number]>();
   for (let i = 0; i < apolloIds.length; i += 10) {
@@ -195,26 +208,44 @@ export async function addContactsFromSearch(
     }
   }
 
-  // Step 2: Resolve LinkedIn URLs via Tavily in parallel.
-  // Use verified email as the primary signal when available — much more
-  // precise than guessing from an obfuscated name.
+  // Step 2: Resolve LinkedIn URLs, all contacts in parallel. Each resolution
+  // searches LinkedIn + the web for candidates and has Claude verify which
+  // one is actually this person (see lib/linkedin-resolver.ts). A returned
+  // URL is verified; null means no confident match — we save null rather
+  // than a wrong profile.
   const linkedinUrls = await Promise.all(
-    people.map((person) => {
+    people.map(async (person) => {
       const enriched = enrichedMap.get(person.id);
-      // If Apollo already returned a linkedin_url, use it directly
-      if (enriched?.linkedin_url) return Promise.resolve(enriched.linkedin_url);
+      // Apollo's own linkedin_url comes from its matched record — trust it.
+      if (enriched?.linkedin_url) return enriched.linkedin_url;
 
-      const firstName = person.first_name ?? "";
-      const lastName = person.last_name ?? ""; // inferred earlier
-      const company = person.organization?.name ?? "";
-      const email = enriched?.email ?? null;
-      if (!firstName || !company) return Promise.resolve(null);
+      const firstName = enriched?.first_name ?? person.first_name ?? "";
+      if (!firstName) return null;
 
-      return findLinkedInUrl({ firstName, lastName, company, title: person.title ?? null, email });
+      // Real last name from enrichment beats the Claude guess from the
+      // obfuscated pattern. Track which one we're using: a guess may be
+      // used to SEARCH but never to VERIFY.
+      const realLast = enriched?.last_name ?? null;
+      const guessLast = person.last_name ?? null;
+
+      const location = [person.city, person.state, person.country]
+        .filter(Boolean)
+        .join(", ");
+
+      const { url } = await resolveLinkedInUrl({
+        firstName,
+        lastName: realLast ?? guessLast,
+        lastNameTrusted: !!realLast,
+        company: person.organization?.name ?? enriched?.organization?.name ?? null,
+        title: person.title ?? enriched?.title ?? null,
+        location: location || null,
+      });
+      return url;
     }),
   );
 
   let added = 0;
+  let withLinkedIn = 0;
 
   for (let i = 0; i < people.length; i++) {
     const person = people[i];
@@ -250,7 +281,7 @@ export async function addContactsFromSearch(
 
     const { error } = await supabase.from("contacts").insert({
       owner_id: user.id,
-      name: buildName(person),
+      name: buildName(person, enriched),
       title: person.title ?? enriched?.title ?? null,
       email: enriched?.email ?? null,
       linkedin_url: linkedinUrl,
@@ -260,10 +291,13 @@ export async function addContactsFromSearch(
       source: "apollo_search",
     });
 
-    if (!error) added++;
+    if (!error) {
+      added++;
+      if (linkedinUrl) withLinkedIn++;
+    }
   }
 
   revalidatePath("/contacts");
   revalidatePath("/search");
-  return { added, error: null };
+  return { added, withLinkedIn, error: null };
 }
