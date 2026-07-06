@@ -40,7 +40,7 @@ export default function LoginPage() {
               type="email"
               required
               autoComplete="email"
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 
@@ -60,7 +60,7 @@ export default function LoginPage() {
               autoComplete={
                 mode === "signin" ? "current-password" : "new-password"
               }
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
             {mode === "signup" && (
               <p className="mt-1 text-xs text-slate-500">
@@ -81,7 +81,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={pending}
-            className="flex w-full justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-full justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {pending
               ? mode === "signin"
@@ -100,7 +100,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setMode("signup")}
-                className="font-medium text-slate-900 hover:underline"
+                className="font-medium text-indigo-600 hover:underline"
               >
                 Sign up
               </button>
@@ -111,7 +111,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setMode("signin")}
-                className="font-medium text-slate-900 hover:underline"
+                className="font-medium text-indigo-600 hover:underline"
               >
                 Sign in
               </button>

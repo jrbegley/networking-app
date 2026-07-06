@@ -165,7 +165,7 @@ export default function NewContactPage() {
       )}
 
       {/* ── Lookup section ──────────────────────────────────────────── */}
-      <div className="mb-6 rounded-lg bg-slate-900 p-5 text-white">
+      <div className="mb-6 rounded-lg bg-indigo-600 p-5 text-white">
         <label htmlFor="lookup-url" className="block text-sm font-medium">
           Auto-fill from LinkedIn URL
         </label>
@@ -180,7 +180,7 @@ export default function NewContactPage() {
             value={lookupUrl}
             onChange={(e) => setLookupUrl(e.target.value)}
             placeholder="https://linkedin.com/in/..."
-            className="flex-1 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+            className="flex-1 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
           <button
             type="button"
@@ -279,7 +279,7 @@ export default function NewContactPage() {
             id="stage"
             name="stage"
             defaultValue={defaults.stage}
-            className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+            className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           >
             {STAGES.map((s) => (
               <option key={s.value} value={s.value}>
@@ -301,7 +301,7 @@ export default function NewContactPage() {
             name="notes"
             rows={3}
             placeholder="How you found them, mutual connections, etc."
-            className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+            className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
         </div>
 
@@ -315,7 +315,7 @@ export default function NewContactPage() {
           <button
             type="submit"
             disabled={pending}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {pending ? "Saving…" : "Add contact"}
           </button>
@@ -365,7 +365,7 @@ function Field({
         placeholder={placeholder}
         autoComplete={autoComplete}
         defaultValue={defaultValue}
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
       />
       {help && <p className="mt-1 text-xs text-slate-500">{help}</p>}
     </div>

@@ -345,7 +345,7 @@ function LinkedInDataBlock({
         <summary className="cursor-pointer select-none text-xs text-slate-500 hover:text-slate-700">
           Show raw LinkedIn payload
         </summary>
-        <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-slate-900 p-3 text-xs leading-relaxed text-slate-100">
+        <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-indigo-600 p-3 text-xs leading-relaxed text-slate-100">
           {JSON.stringify(payload, null, 2)}
         </pre>
       </details>
@@ -383,7 +383,7 @@ function TavilyDataBlock({
         <summary className="cursor-pointer select-none text-xs text-slate-500 hover:text-slate-700">
           Show raw Tavily payload
         </summary>
-        <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-slate-900 p-3 text-xs leading-relaxed text-slate-100">
+        <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-indigo-600 p-3 text-xs leading-relaxed text-slate-100">
           {JSON.stringify(payload, null, 2)}
         </pre>
       </details>

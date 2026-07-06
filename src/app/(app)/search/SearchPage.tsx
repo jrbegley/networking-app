@@ -138,13 +138,13 @@ export function SearchPage() {
             if (e.key === "Enter") runSearch(1);
           }}
           placeholder="e.g. VCs at fintech firms who went to UIUC, or consultants in Chicago at mid-size firms"
-          className="flex-1 rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          className="flex-1 rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
         <button
           type="button"
           onClick={() => runSearch(1)}
           disabled={searching || !query.trim()}
-          className="rounded-md bg-slate-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-md bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {searching ? "Searching…" : "Search"}
         </button>
@@ -196,7 +196,7 @@ export function SearchPage() {
                 type="button"
                 onClick={handleAddSelected}
                 disabled={adding}
-                className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+                className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
               >
                 {adding ? "Adding…" : `Add ${addableSelected} selected`}
               </button>
@@ -306,7 +306,7 @@ function PersonRow({
         checked={selected}
         onChange={onToggle}
         disabled={person.inPipeline}
-        className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500 disabled:cursor-not-allowed"
+        className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-indigo-500 disabled:cursor-not-allowed"
       />
 
       {/* Info */}
@@ -355,7 +355,7 @@ function PersonRow({
             type="button"
             onClick={onAdd}
             disabled={adding}
-            className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+            className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
           >
             Add
           </button>

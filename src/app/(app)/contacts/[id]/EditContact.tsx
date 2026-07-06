@@ -60,7 +60,7 @@ export function EditContact({ initial }: { initial: Initial }) {
                 id="edit-stage"
                 name="stage"
                 defaultValue={initial.stage}
-                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
               >
                 {PIPELINE_STAGES.map((s) => (
                   <option key={s} value={s}>{STAGE_LABEL[s]}</option>
@@ -78,7 +78,7 @@ export function EditContact({ initial }: { initial: Initial }) {
               name="notes"
               rows={3}
               defaultValue={initial.notes}
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 
@@ -86,7 +86,7 @@ export function EditContact({ initial }: { initial: Initial }) {
             <button
               type="submit"
               disabled={pending}
-              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:opacity-50"
+              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50"
             >
               {pending ? "Saving…" : "Save changes"}
             </button>
@@ -113,7 +113,7 @@ function Field({
         type={type}
         required={required}
         defaultValue={defaultValue}
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
       />
     </div>
   );

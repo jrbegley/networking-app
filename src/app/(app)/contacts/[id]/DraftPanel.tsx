@@ -156,7 +156,7 @@ export function DraftPanel({
           type="button"
           onClick={handleGenerate}
           disabled={busy !== null}
-          className="shrink-0 rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          className="shrink-0 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busy === "generate"
             ? "Drafting…"
@@ -195,7 +195,7 @@ export function DraftPanel({
               type="text"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 
@@ -212,7 +212,7 @@ export function DraftPanel({
               rows={12}
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 font-sans text-sm leading-relaxed text-slate-900 shadow-sm focus:border-slate-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-500"
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 font-sans text-sm leading-relaxed text-slate-900 shadow-sm focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 
@@ -223,7 +223,7 @@ export function DraftPanel({
                 type="button"
                 onClick={handleSave}
                 disabled={busy !== null || !dirty}
-                className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy === "save" ? "Saving…" : dirty ? "Save" : "Saved"}
               </button>
@@ -313,13 +313,13 @@ export function DraftPanel({
                 }}
                 placeholder="e.g. make it shorter, or mention our shared class"
                 disabled={busy !== null}
-                className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:opacity-50"
+                className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
               />
               <button
                 type="button"
                 onClick={handleRefine}
                 disabled={busy !== null || !instruction.trim()}
-                className="shrink-0 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                className="shrink-0 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy === "refine" ? "Revising…" : "Send"}
               </button>

@@ -74,16 +74,40 @@ export function PipelineView({
               type="button"
               onClick={handleSyncAll}
               disabled={syncing}
-              className="inline-flex items-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm transition-colors duration-150 hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {syncing ? "Syncing…" : "↻ Sync inbox"}
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`}
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                />
+              </svg>
+              {syncing ? "Syncing…" : "Sync inbox"}
             </button>
           )}
           <Link
             href="/contacts/new"
-            className="inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
+            className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-indigo-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
           >
-            + Add contact
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="h-4 w-4"
+              aria-hidden="true"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            Add contact
           </Link>
         </div>
       </div>
@@ -103,10 +127,10 @@ export function PipelineView({
               key={mode}
               type="button"
               onClick={() => setGroupBy(mode)}
-              className={`px-3 py-1.5 text-xs font-medium capitalize first:rounded-l-md last:rounded-r-md focus:outline-none focus:ring-2 focus:ring-inset focus:ring-slate-400 ${
+              className={`cursor-pointer px-3 py-1.5 text-xs font-medium capitalize transition-colors duration-150 first:rounded-l-md last:rounded-r-md focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${
                 groupBy === mode
-                  ? "bg-slate-900 text-white"
-                  : "text-slate-600 hover:bg-slate-50"
+                  ? "bg-indigo-600 text-white"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
               }`}
             >
               {mode}
@@ -210,9 +234,19 @@ function EmptyState() {
       </p>
       <Link
         href="/contacts/new"
-        className="mt-4 inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
+        className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-indigo-500"
       >
-        + Add first contact
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          className="h-4 w-4"
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+        Add first contact
       </Link>
     </div>
   );
@@ -228,10 +262,10 @@ function ContactGroup({
   groupBy: GroupBy;
 }) {
   return (
-    <section className="overflow-hidden rounded-lg bg-white ring-1 ring-slate-200">
-      <header className="flex items-baseline justify-between border-b border-slate-200 px-5 py-3">
+    <section className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
+      <header className="flex items-baseline justify-between border-b border-slate-100 bg-slate-50/50 px-5 py-3">
         <h2 className="text-sm font-semibold text-slate-900">{label}</h2>
-        <span className="text-xs text-slate-500">
+        <span className="text-xs font-medium text-slate-400">
           {contacts.length} {contacts.length === 1 ? "person" : "people"}
         </span>
       </header>
@@ -255,7 +289,7 @@ function ContactItem({
     <li>
       <Link
         href={`/contacts/${contact.id}`}
-        className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-slate-50"
+        className="flex items-center justify-between gap-4 px-5 py-3 transition-colors duration-150 hover:bg-indigo-50/40"
       >
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-slate-900">

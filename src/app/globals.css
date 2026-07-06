@@ -1,1 +1,21 @@
 @import "tailwindcss";
+
+@theme {
+  /* Plus Jakarta Sans loaded via next/font in app/layout.tsx */
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+}
+
+::selection {
+  background-color: theme(--color-indigo-100);
+  color: theme(--color-indigo-900);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
