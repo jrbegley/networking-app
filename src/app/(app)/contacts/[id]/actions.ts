@@ -13,6 +13,7 @@ import { isApolloShellResponse } from "@/lib/apollo-summary";
 import {
   draftOutreachEmail,
   refineOutreachEmail,
+  extractDraftSnippet,
   type Draft,
   type DraftContext,
 } from "@/lib/claude";
@@ -713,7 +714,7 @@ async function loadDraftContext(
   | { error: string; context: null; currentStage: null }
   | { error: null; context: DraftContext; currentStage: string }
 > {
-  const [contactRes, linkedinRes, apolloRes, profileRes] = await Promise.all([
+  const [contactRes, linkedinRes, apolloRes, profileRes, recentRes] = await Promise.all([
     supabase
       .from("contacts")
       .select(
@@ -743,6 +744,16 @@ async function loadDraftContext(
       .select("bio, resume_text, outreach_goal, linkedin_url")
       .eq("id", userId)
       .maybeSingle(),
+    // Openings + asks from the sender's most recent drafts to other
+    // contacts, so the new draft can steer away from reused wording.
+    supabase
+      .from("contacts")
+      .select("draft_body")
+      .eq("owner_id", userId)
+      .neq("id", contactId)
+      .not("draft_body", "is", null)
+      .order("draft_updated_at", { ascending: false })
+      .limit(3),
   ]);
 
   if (contactRes.error) {
@@ -777,6 +788,9 @@ async function loadDraftContext(
       tavilyPayload: null,
       userNotes: contact.notes,
       researchNotes: contact.research_notes ?? null,
+      recentDrafts: (recentRes.data ?? [])
+        .filter((r): r is { draft_body: string } => !!r.draft_body)
+        .map((r) => extractDraftSnippet(r.draft_body)),
       sender: {
         bio: profile?.bio ?? null,
         resumeText: profile?.resume_text ?? null,

@@ -1,5 +1,6 @@
-// Temporary: generate drafts for all real contacts with the CURRENT prompt
-// to demonstrate the sameness problem. Mirrors loadDraftContext exactly.
+// Dev harness: generate drafts for all real contacts through the live
+// drafting pipeline (src/lib/claude.ts), including recent-draft injection,
+// mirroring loadDraftContext. Run: npx tsx test-drafts.mts
 import fs from "node:fs";
 
 for (const line of fs.readFileSync(".env.local", "utf8").split(/\r?\n/)) {
@@ -8,7 +9,7 @@ for (const line of fs.readFileSync(".env.local", "utf8").split(/\r?\n/)) {
 }
 
 const { createClient } = await import("@supabase/supabase-js");
-const { draftOutreachEmail } = await import("./src/lib/claude");
+const { draftOutreachEmail, extractDraftSnippet } = await import("./src/lib/claude");
 
 const db = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,9 +29,10 @@ const { data: contacts } = await db
   .order("created_at", { ascending: true });
 
 for (const contact of contacts ?? []) {
-  const [{ data: li }, { data: ap }] = await Promise.all([
+  const [{ data: li }, { data: ap }, { data: recent }] = await Promise.all([
     db.from("research_artifacts").select("payload").eq("contact_id", contact.id).eq("source", "linkedin").order("created_at", { ascending: false }).limit(1).maybeSingle(),
     db.from("research_artifacts").select("payload").eq("contact_id", contact.id).eq("source", "apollo").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    db.from("contacts").select("draft_body").neq("id", contact.id).not("draft_body", "is", null).order("draft_updated_at", { ascending: false }).limit(3),
   ]);
 
   const company = Array.isArray(contact.company) ? (contact.company[0] ?? null) : (contact.company as { name: string; industry: string | null } | null);
@@ -46,6 +48,9 @@ for (const contact of contacts ?? []) {
     tavilyPayload: null,
     userNotes: contact.notes,
     researchNotes: contact.research_notes ?? null,
+    recentDrafts: (recent ?? [])
+      .filter((r): r is { draft_body: string } => !!r.draft_body)
+      .map((r) => extractDraftSnippet(r.draft_body)),
     sender: {
       bio: profile?.bio ?? null,
       resumeText: profile?.resume_text ?? null,

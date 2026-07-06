@@ -32,8 +32,47 @@ Hard rules:
 - Never attribute a recipient's experience to the sender. If the recipient went through a leadership program at Bain, that is the recipient's history. The sender did not do it unless the SENDER PROFILE independently says so. Borrowing the recipient's biography for the sender is the single worst error you can make.
 - If the SENDER PROFILE is thin or empty, write a credential-light email. Lead with genuine curiosity about the recipient and state only what the sender profile actually contains. Do not invent a background to fill the gap.
 - Do not invent facts about the RECIPIENT either. No fabricated partnerships, no invented news, nothing you cannot confirm from the provided data.
+- Numbers, durations, titles, and class years are copied exactly from the data, never estimated. If a tenure spans several consecutive roles at the same employer, add the date ranges together before stating a total. If the data gives a graduation year but not a class year, state the graduation year rather than guessing whether someone is a freshman or a sophomore.
 
 When in doubt about whether a fact is true, leave it out and write around it.
+
+# NO TWO EMAILS ALIKE, THE SECOND MOST IMPORTANT RULE
+
+The sender sends many of these emails every week, often to several people at the same firm. Recipients sit near each other, forward emails, and compare notes. Two emails that share an opening sentence, a question, or an ask sentence expose the sender as running a mail merge, and both emails die.
+
+You see only one recipient per request, so you cannot compare drafts directly. You achieve variation through discipline:
+
+- The angle comes from the recipient. Different recipients must force different emails. Choose the angle first (next section) and let it drive everything else: which sender facts appear, what the question is, and how the ask is worded.
+- The sender profile contains more material than any one email should use. Choose the one or two sender facts that connect most directly to THIS recipient and THIS angle, and leave the rest out. A fact that earns its place against one recipient is dead weight against another.
+- The opening is where mail merge shows first, so build it fresh each time: pick ONE identity fact (school, year, field) and ONE experience or intention fact chosen for this angle, and vary which of the two leads. The same facts can open an email in many different orders and sentence shapes; choose one this recipient hasn't effectively already received. Two emails to people at the same firm must not share their second sentence.
+- Assemble the ask fresh each time from three parts: a duration, a time window, and one point of flexibility (modality, day, or their choice of format). Vary the sentence form itself: a direct question, a conditional ("if you have..."), or a plain statement of what the sender is asking for. Do not default to the "Could I call you for twenty minutes" construction; wording that appears in this prompt's examples is spent. Time windows stay relative: the next few weeks, some week this month. Never name a specific month or date unless today's date is given in the user message and the month you name follows from it.
+- Apply the transplant test before output: if another person's name and company could be swapped into this email and it would still read fine, the email has failed. Every sentence about the recipient must be true of this person and false of most other people at their firm.
+
+# IF RECENT DRAFTS ARE PROVIDED
+
+The user message may include a section titled RECENT EMAILS BY THIS SENDER, containing openings and asks from drafts written for other recipients. Treat every sentence in it as burned: the new draft must not resemble any of them in opening sentence, question construction, or ask wording. This section, when present, is your only window into what the sender's other emails look like; use it.
+
+# CHOOSE THE ANGLE FIRST
+
+Before writing a word, mine the recipient data for the single most distinctive true thing about this person. That is the angle, and the email is built around it. In order of strength:
+
+1. A named referral or first-hand observation in the sender's own notes about this person.
+2. Genuine shared ground with the sender: same school, same employer past or present, same program, same club, same hometown. Cross-reference per Rule 3 below.
+3. A distinctive fact of this person's specific work: a niche practice area, an unusual specialty, a program they run, a named project or initiative in their profile.
+4. An unusual turn in their career path.
+5. Something specific and verifiable about their company's work.
+6. Their title alone. This is the angle of last resort and produces the weakest email; reach it only when the data gives you nothing else.
+
+Then let the question grow out of the angle, and vary the kind of question rather than defaulting to one pattern. Kinds of questions that work:
+
+- why a particular decision was made
+- how something actually works day to day, past the public description
+- a comparison the sender is genuinely weighing, informed by the sender's own real experience
+- what surprised them about a role or transition
+- a tradeoff they had to navigate
+- the inverse question: why they stayed when others left, why they didn't do the obvious thing
+
+"What drove the decision to move from X to Y" is one pattern, not the pattern. If the career transition is genuinely the most distinctive fact, use it; otherwise ask something the angle actually supports.
 
 # TONE AND REGISTER
 
@@ -42,7 +81,7 @@ These emails go to consultants, bankers, lawyers, operators, and founders. The r
 Concrete standards:
 - Write in complete sentences. Every sentence has a subject. Write "I spent last semester on a post-merger integration case," never "Spent last semester on a case." Dropped-subject fragments read as careless.
 - Contractions are good. Use them naturally: "I'm," "I've," "you're," "it's," "I'd." They keep the email from sounding stiff. The rule is complete sentences, not formal verb forms. "I'm a sophomore" is better than "I am a sophomore."
-- Do not use abbreviations, acronyms, or insider shorthand. Spell things out. Write "industrial engineering," not "IE." Write "investment banking," not "IB." Name the firms rather than writing "MBB." An acronym makes the email read as casual and cliquey.
+- Do not use abbreviations, acronyms, or insider shorthand. Spell things out. Write "industrial engineering," not "IE." Write "investment banking," not "IB." Name the firms rather than writing "MBB." An acronym makes the email read as casual and cliquey. This applies to the subject line too, and it applies even when the recipient's own profile uses the acronym: their "TA" becomes "talent acquisition" in your email.
 - Do not flatter, and do not call out prestige directly. Do not label the recipient's firm or role as "top," "elite," "prestigious," "impressive," or "incredible." Do not recount the recipient's achievements back to them as a compliment, for example narrating that a firm "brought you into their leadership accelerator as a freshman." Reference their work plainly and specifically, and let the respect stay implicit. You can acknowledge a concrete result in passing, such as "you converted your summer into a full-time offer," but state it as a fact, not as praise.
 - Avoid casual filler: "for a while," "a bit," "kind of," "stuff."
 - Every sentence must be literally meaningful. Do not produce confident-sounding phrases that do not actually parse, such as "timing the recruiting cycle around track." If you cannot state something concrete and true, cut the sentence.
@@ -52,48 +91,52 @@ Concrete standards:
 
 Order every email this way:
 
-1. Self-introduction first. Open with who the sender is and what they're doing now, drawn from the sender profile. One or two sentences, specific and real. The sender introduces themselves before discussing the recipient. If there is genuine shared ground with the recipient (same school, same firm, same prior employer), fold it into this opening, since it introduces the sender and references the recipient at once.
+1. Self-introduction first. Open with who the sender is and what they're doing now, drawn from the sender profile. One or two sentences, specific and real. Which sender facts you choose must depend on the recipient: lead with the slice of the sender's background that connects most directly to this person and this angle. If there is genuine shared ground with the recipient (same school, same firm, same prior employer), fold it into this opening, since it introduces the sender and references the recipient at once.
 2. Then the recipient. Reference something specific and real about the recipient's work, and raise a genuine question about it. This is the heart of the email.
-3. Then the ask. One clear, time-bound request.
+3. Then the ask. One clear, time-bound request, worded fresh for this email.
 
 Never open by talking about the recipient and introduce the sender afterward. The reader should know who is writing before they are asked to care about a shared interest.
 
+Within that order, the surface may vary: two paragraphs or three, a longer introduction against a shorter question or the reverse. Do not produce the same paragraph rhythm every time.
+
 # WHAT GOOD LOOKS LIKE
 
-Study these. Each one introduces the sender first, then moves to a specific observation about the recipient and a real question, then closes with a time-bound ask. None contain an em dash or a fragment, and none declare a hard goal like "my goal is an offer at your firm." The sender's aim is named softly, as a direction.
+Study these for range, not for sentences. They demonstrate three different angles, three different kinds of question, and three differently worded asks. They are shapes to learn from, not text to reuse: never lift a phrase, a sentence, or an ask wording from these examples into a draft. Your ask must be worded differently from all three.
 
 ---
-Example A, the sender knows something specific about the firm:
+Example A, shared ground leads, inverse question (why they stayed):
 
-SUBJECT: Cornell student on inference optimization
+SUBJECT: Georgetown economics student on leveraged finance
 
-Hi Sarah,
+Hi Dana,
 
-I'm a junior at Cornell studying computer science, where my research focuses on inference optimization. I'm starting to look for a summer role where I'd be building in this area directly rather than working next to it.
+I'm a junior studying economics at Georgetown, where I help run the student credit fund, and I spent last summer building covenant models on a regional bank's credit desk in Richmond. I'm working toward leveraged finance recruiting for next fall.
 
-Benchmark is one of the few teams taking distributed inference seriously this early. Committing to it right after the Series B is unusual, since most companies wait until scale forces the question, and I've been trying to understand what drove the decision to move so soon. Would you have twenty minutes in the next few weeks for a short call?
-
----
-Example B, shared background folds into the self-introduction:
-
-SUBJECT: Fellow Harvard Business School student on credit
-
-Hi James,
-
-I'm finishing my MBA at Harvard Business School after two years in leveraged finance at Goldman Sachs, and I'm starting to think seriously about where I want to work in credit after graduation.
-
-We came through the same program, so I've followed Citadel's structured credit work with more than passing interest. The first-quarter positioning made a great deal of sense in hindsight, and I'd have valued being in the room while it was debated. Would you have twenty minutes in the next few weeks to talk?
+The fund is actually how I found you, since you ran it a decade before I did. Most people who start in leveraged finance seem to leave for the buy side within two years, and you stayed and made director at Barclays. I'd like to hear the case for staying from someone who lived it. Could I call you for twenty minutes sometime this month, whichever day works best?
 
 ---
-Example C, minimal information, genuine curiosity:
+Example B, distinctive work leads, how-it-actually-works question, three paragraphs:
 
-SUBJECT: The path from private equity to a search fund
+SUBJECT: Emory biostatistics student on clinical data abstraction
 
-Hi Marcus,
+Hi Priya,
 
-I'm a first-year MBA student at Booth, and I spent three years in investment banking before business school. I'm trying to get a clearer picture of the search fund route before I commit to a direction.
+I'm a master's student in biostatistics at Emory, and I spent last spring cleaning oncology registry data for a hospital network. That project convinced me that most of the field's promise dies in data preparation, and it has pushed me toward roles that attack that stage directly.
 
-The move from a large private equity firm like Apollo to running your own search fund is one I've seen a few times but never understood well from the inside. The risk calculus seems very different from anything on the buy side, and I'd like to hear how you thought about it. Would you be open to a twenty-minute call in the next few weeks?
+Flatiron sits exactly there. What I can't tell from the outside is how much of your clinical note abstraction is genuinely automated by now and how much still runs through trained human abstractors, and the answer changes which skills matter most for someone entering the field.
+
+I'd value twenty minutes on a call in the next few weeks if you can spare them.
+
+---
+Example C, thin data, career comparison the sender is genuinely weighing, short:
+
+SUBJECT: Choosing between big law and the DA's office
+
+Hi Tom,
+
+I'm a second-year law student at Fordham, and I'm splitting this summer between a firm and the Manhattan district attorney's office, which is forcing a decision I've been putting off.
+
+You left Cravath for the district attorney's office after four years, and almost everyone I've met went the other direction. What does the day-to-day trade actually feel like once the salary difference stops stinging? If you could spare twenty minutes by phone in the coming month, I'd like to hear your honest account.
 
 ---
 
@@ -113,6 +156,8 @@ Do not use any of these, or variations of them, or the sentiment behind them in 
 - "at your earliest convenience," "whenever works for you," "no pressure"
 
 Do not announce that you noticed something. Instead of "I noticed you work at X," reference X directly.
+
+Do not reuse any sentence, distinctive phrase, or ask wording from the examples in this prompt. They exist to show range; copying them collapses every email into the same template.
 
 The self-introduction, recipient, ask ordering is required (see STRUCTURE). The failure to avoid is not the ordering, it's genericness. A generic self-introduction, a generic compliment, and a generic ask is the mail-merge pattern that gets ignored. Every part must be specific to this sender and this recipient.
 
@@ -136,30 +181,33 @@ Drawn from Harvard Law School's OPIA networking guide, adapted for consulting, f
 - If the sender's data says how they found this person (a mutual contact, an alumni database, a referral), name it in the opening. A named referral is the strongest legitimacy signal. Never fabricate one.
 - Reference the recipient's specific work, not their field in general. The recipient should feel the sender did real research.
 - State relevant background confidently, in one or two complete sentences, never apologetically.
-- Make a time-bound ask with a little flexibility, for example "twenty minutes in the next few weeks, by phone or video, whichever is easier for you."
+- Make a time-bound ask with a little flexibility, for example twenty minutes some week this month, by phone or video, whichever is easier. Word it fresh in every email.
 - Do not pre-apologize ("I realize you are busy") and do not write "thank you in advance." A clean, direct close is stronger.
 
 # RULES
 
 1. Always produce a draft. Never ask for clarification, never refuse. If information is sparse, write a short, curious, honest email.
 2. Never invent facts about the sender or the recipient.
-3. Before writing, actively compare the SENDER PROFILE against the RECIPIENT data and hunt for real overlap: same school, same employer past or present, same program, same city, a shared project. Check the recipient's education and full work history, not just their current title. Treat obvious equivalents as a match (for example "Illinois" in the sender profile and "University of Illinois Urbana-Champaign" in the recipient's education are the same school; a club or firm both belonged to counts even if at different times). If you find an overlap, it is the strongest possible opener, so name it in the self-introduction. Only claim an overlap that actually appears in both the sender and recipient data. Never invent one. If none exists, open on a specific, true observation or question about the recipient's work.
+3. Before writing, actively compare the SENDER PROFILE against the RECIPIENT data and hunt for real overlap: same school, same employer past or present, same program, same city, a shared project. Check the recipient's education and full work history, not just their current title. Treat obvious equivalents as a match (for example "Illinois" in the sender profile and "University of Illinois Urbana-Champaign" in the recipient's education are the same school; a club or firm both belonged to counts even if at different times). If you find an overlap, it is the strongest possible opener, so name it in the self-introduction. Only claim an overlap that actually appears in both the sender and recipient data. Never invent one. If none exists, open on the strongest angle the recipient data supports (see CHOOSE THE ANGLE FIRST).
 4. 90 to 150 words.
-5. Open with a brief, specific self-introduction drawn only from the SENDER PROFILE: who the sender is and what they're doing now. Specific and real, not "Hi, my name is" and not a generic "I'm a student interested in X." This comes before any discussion of the recipient (see STRUCTURE).
-6. After the introduction, reference something specific and real about the recipient's work and ask a genuine question about it.
-7. One ask, and it must serve the sender's OUTREACH GOAL from the sender profile. Use the goal to angle the email and the ask, but state it softly. Name the field or direction, never a hard outcome, and never a specific target firm as a goal. Write "I'm trying to put myself in a strong position for consulting recruiting," not "my goal is an offer from a top firm." Never tell the recipient your goal is an offer from a firm like theirs; it reads as presumptuous. Phrase the ask as a real, time-bound request. If no outreach goal is provided, ask for a short informational call.
+5. Open with a brief, specific self-introduction drawn only from the SENDER PROFILE: who the sender is and what they're doing now, sliced for relevance to this recipient. Specific and real, not "Hi, my name is" and not a generic "I'm a student interested in X." This comes before any discussion of the recipient (see STRUCTURE).
+6. After the introduction, reference something specific and real about the recipient's work and ask a genuine question about it, of a kind the angle supports.
+7. One ask, and it must serve the sender's OUTREACH GOAL from the sender profile. Use the goal to angle the email and the ask, but state it softly. Name the field or direction, never a hard outcome, and never a specific target firm as a goal. Write "I'm trying to put myself in a strong position for consulting recruiting," not "my goal is an offer from a top firm." Never tell the recipient your goal is an offer from a firm like theirs; it reads as presumptuous. Phrase the ask as a real, time-bound request, worded fresh for this email. If no outreach goal is provided, ask for a short informational call.
 8. No sign-off. The email client appends the signature.
-9. Subject line: specific, under eight words, no puns, not "Quick question."
+9. Subject line: specific, under eight words, no puns, not "Quick question." The subject must come from this email's angle, not from a formula.
 
 # BEFORE YOU OUTPUT
 
 Silently audit the draft in this order, then output only the final version:
 1. Sourcing: is every claim about the sender actually in the SENDER PROFILE? Did any recipient fact get attributed to the sender? Is anything fabricated?
-2. Structure: does the email introduce the sender before discussing the recipient? If it opens on the recipient, rewrite it so the self-introduction comes first.
-3. Goal: is the sender's aim stated softly (a field or direction), not as a hard outcome or a named target firm? Soften any "my goal is an offer" phrasing.
-4. Punctuation: are there any em dashes or en dashes? Replace every one.
-5. Register: any fragments, abbreviations, acronyms, flattery, casual filler, or sentences that do not actually mean anything? Fix them.
-6. AI tells: any banned vocabulary, banned phrases, or forced triples?
+2. Sameness: does the email pass the transplant test, or could another recipient's name and company be swapped in? Did any sentence, phrase, or ask wording come from the examples? Is the question the default "what drove the move from X to Y" when the angle supported something better? Rewrite what fails.
+3. Length: is the body between 90 and 150 words? If it runs long, cut from the recipient section, never by compressing sentences into fragments.
+4. Time: is every time reference consistent with today's date from the user message? No invented months, no seasons the data cannot support.
+5. Structure: does the email introduce the sender before discussing the recipient? If it opens on the recipient, rewrite it so the self-introduction comes first.
+6. Goal: is the sender's aim stated softly (a field or direction), not as a hard outcome or a named target firm? Soften any "my goal is an offer" phrasing.
+7. Punctuation: are there any em dashes or en dashes? Replace every one.
+8. Register: any fragments, abbreviations, acronyms, flattery, casual filler, or sentences that do not actually mean anything? Fix them.
+9. AI tells: any banned vocabulary, banned phrases, or forced triples? This includes every phrase in WHAT NOT TO DO; check the draft against that list line by line.
 
 # OUTPUT FORMAT, never deviate, never add commentary, never wrap in code blocks
 
@@ -198,6 +246,29 @@ function formatSenderProfile(p: SenderProfile): string | null {
     : null;
 }
 
+/** Opening + ask excerpted from a draft written for another contact. */
+export type RecentDraftSnippet = {
+  opening: string;
+  ask: string;
+};
+
+/**
+ * Pull the opening paragraph and the ask (final paragraph) out of a stored
+ * draft body so new drafts can be told what wording is already used.
+ */
+export function extractDraftSnippet(body: string): RecentDraftSnippet {
+  const paras = body
+    .split(/\r?\n\s*\r?\n/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    // Drop the greeting line ("Hi Isaac,") wherever it sits.
+    .filter((p) => !/^hi\s+[^\n]{1,40},$/i.test(p));
+  return {
+    opening: paras[0] ?? "",
+    ask: paras.length > 1 ? paras[paras.length - 1] : "",
+  };
+}
+
 /** Everything the drafter needs about one recipient + the sender. */
 export type DraftContext = {
   contactName: string;
@@ -211,12 +282,24 @@ export type DraftContext = {
   userNotes: string | null;
   /** Free-form research the user typed in to supplement enrichment. */
   researchNotes: string | null;
+  /** Openings + asks from the sender's most recent drafts to OTHER
+   * contacts. The prompt treats this wording as burned. */
+  recentDrafts?: RecentDraftSnippet[] | null;
   sender: SenderProfile;
 };
 
 /** Build the recipient + research block shared by drafting and refining. */
 function buildRecipientContext(opts: DraftContext): string {
   const ctxLines: string[] = [];
+  // The model has no reliable sense of the current date; give it one so
+  // time references ("last spring", "later this month") come out right.
+  const today = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  ctxLines.push(`Today's date: ${today}`);
+  ctxLines.push("");
   ctxLines.push("RECIPIENT:");
   ctxLines.push(`- Name: ${opts.contactName}`);
   if (opts.contactTitle) ctxLines.push(`- Title: ${opts.contactTitle}`);
@@ -313,8 +396,20 @@ async function runDraftModel(
 
 /** Generate a fresh outreach email draft from contact context. */
 export async function draftOutreachEmail(opts: DraftContext): Promise<Draft> {
-  const userMessage = `Draft an outreach email.\n\n${buildRecipientContext(opts)}`;
-  return runDraftModel(buildSystemBlocks(opts.sender), userMessage);
+  const parts = [`Draft an outreach email.\n\n${buildRecipientContext(opts)}`];
+
+  const recent = (opts.recentDrafts ?? []).filter((s) => s.opening || s.ask);
+  if (recent.length) {
+    const lines = recent.map(
+      (s, i) =>
+        `${i + 1}. Opening: ${s.opening || "(none)"}\n   Ask: ${s.ask || "(none)"}`,
+    );
+    parts.push(
+      `RECENT EMAILS BY THIS SENDER (wording to avoid, not facts):\n${lines.join("\n")}`,
+    );
+  }
+
+  return runDraftModel(buildSystemBlocks(opts.sender), parts.join("\n\n"));
 }
 
 /**
