@@ -382,7 +382,7 @@ export async function translateSearchQuery(
   const systemPrompt = `You translate a natural-language people-search query into a JSON object of Apollo.io search filters. Output ONLY valid JSON, no prose, no markdown fences.
 
 Available filter fields (all optional, only include what's relevant):
-- organization_names: string[] — company names, OR-matched (e.g. ["McKinsey & Company", "Bain & Company", "Boston Consulting Group"]). Use this for any company or firm filter. Never put company names in q_keywords.
+- organization_domains: string[] — the PRIMARY WEB DOMAIN of each company, OR-matched (e.g. ["bain.com"] for Bain, ["mckinsey.com", "bain.com", "bcg.com"] for the big three consultancies). Use this for any company or firm filter. Use the company's main corporate domain, lowercase, no www or protocol. Never put company names in q_keywords.
 - person_titles: string[] — job titles to match (e.g. ["Partner", "Associate", "Consultant"])
 - person_locations: string[] — cities/states/countries (e.g. ["Chicago, Illinois", "New York"])
 - person_seniorities: string[] — one or more of: "c_suite", "vp", "director", "manager", "senior", "entry", "intern", "partner", "owner"
@@ -391,10 +391,10 @@ Available filter fields (all optional, only include what's relevant):
 - q_keywords: string — last resort for concepts that don't fit other fields (e.g. "private equity"). Do NOT put company names, school names, titles, or locations here — they have dedicated fields above that work better.
 
 Acronym expansions you must always apply:
-- MBB → organization_names: ["McKinsey & Company", "Bain & Company", "Boston Consulting Group"]
-- BB (bulge bracket) → organization_names: ["Goldman Sachs", "Morgan Stanley", "JPMorgan", "Bank of America", "Citigroup", "Barclays", "Deutsche Bank", "UBS", "Credit Suisse", "Wells Fargo"]
-- Big 4 → organization_names: ["Deloitte", "PwC", "EY", "KPMG"]
-- FAANG / MANGA → organization_names: ["Meta", "Apple", "Amazon", "Netflix", "Google", "Microsoft"]
+- MBB → organization_domains: ["mckinsey.com", "bain.com", "bcg.com"]
+- BB (bulge bracket) → organization_domains: ["goldmansachs.com", "morganstanley.com", "jpmorgan.com", "bankofamerica.com", "citigroup.com", "barclays.com", "db.com", "ubs.com", "wellsfargo.com"]
+- Big 4 → organization_domains: ["deloitte.com", "pwc.com", "ey.com", "kpmg.com"]
+- FAANG / MANGA → organization_domains: ["meta.com", "apple.com", "amazon.com", "netflix.com", "google.com", "microsoft.com"]
 
 Rules:
 - For alumni/shared-school searches, infer schools from the sender profile if not stated explicitly

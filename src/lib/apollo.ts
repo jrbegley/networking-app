@@ -50,7 +50,13 @@ export type ApolloSearchFilters = {
   person_locations?: string[];
   person_seniorities?: string[];
   person_schools?: string[];
-  organization_names?: string[];   // OR match across company names
+  /**
+   * Company web domains (e.g. "bain.com"). Resolved to Apollo organization
+   * ids before searching — api_search SILENTLY IGNORES organization_names,
+   * so filtering by name returns unfiltered random people. Ids are the only
+   * company filter that actually works (verified empirically 2026-07-06).
+   */
+  organization_domains?: string[];
   organization_industry_tag_ids?: string[];
   organization_num_employees_ranges?: string[];
 };
@@ -79,6 +85,45 @@ export type ApolloSearchResponse = {
   };
 };
 
+// Domain → Apollo org id cache. Module-level so repeat searches for the
+// same firms (the common case) skip the enrich round-trip within a warm
+// serverless instance.
+const orgIdCache = new Map<string, string | null>();
+
+/**
+ * Resolve a company web domain to Apollo's canonical organization id via
+ * organizations/enrich. Name-based org search is unreliable (the real
+ * "Bain & Company" doesn't rank in the top 10 for its own exact name);
+ * domain lookup is deterministic.
+ */
+async function getOrgIdByDomain(domain: string): Promise<string | null> {
+  const key = domain.toLowerCase().trim();
+  if (orgIdCache.has(key)) return orgIdCache.get(key)!;
+
+  const apiKey = process.env.APOLLO_API_KEY;
+  if (!apiKey) throw new Error("APOLLO_API_KEY not set");
+
+  let id: string | null = null;
+  try {
+    const res = await fetch(
+      `${APOLLO_BASE}/organizations/enrich?domain=${encodeURIComponent(key)}`,
+      {
+        headers: { "X-Api-Key": apiKey, accept: "application/json" },
+        cache: "no-store",
+      },
+    );
+    if (res.ok) {
+      const data = await res.json();
+      id = (data.organization?.id as string | undefined) ?? null;
+    }
+  } catch {
+    id = null;
+  }
+
+  orgIdCache.set(key, id);
+  return id;
+}
+
 /**
  * Search Apollo's people database. Does NOT reveal emails — that costs
  * credits and goes through enrichPersonByLinkedInUrl separately.
@@ -92,8 +137,25 @@ export async function searchPeople(
   const apiKey = process.env.APOLLO_API_KEY;
   if (!apiKey) throw new Error("APOLLO_API_KEY not set");
 
+  // Company filter: resolve domains → organization ids. If the user asked
+  // for specific companies and NONE resolve, fail loudly — searching
+  // without the company filter would return random people, which is worse
+  // than an error.
+  const { organization_domains, ...rest } = filters;
+  let organization_ids: string[] | undefined;
+  if (organization_domains?.length) {
+    const ids = await Promise.all(organization_domains.map(getOrgIdByDomain));
+    organization_ids = ids.filter((id): id is string => !!id);
+    if (!organization_ids.length) {
+      throw new Error(
+        `Couldn't find ${organization_domains.join(", ")} in Apollo — try a different company name.`,
+      );
+    }
+  }
+
   const body = {
-    ...filters,
+    ...rest,
+    ...(organization_ids ? { organization_ids } : {}),
     page,
     per_page: perPage,
   };
@@ -138,11 +200,13 @@ export async function searchPeople(
           }
         : null,
     })) as ApolloSearchPerson[],
+    // api_search puts total_entries at the top level with no pagination
+    // object (unlike the old mixed_people/search endpoint).
     pagination: data.pagination ?? {
       page,
       per_page: perPage,
-      total_entries: 0,
-      total_pages: 0,
+      total_entries: (data.total_entries as number | undefined) ?? 0,
+      total_pages: Math.ceil(((data.total_entries as number | undefined) ?? 0) / perPage),
     },
   };
 }

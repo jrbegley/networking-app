@@ -228,7 +228,12 @@ export async function addContactsFromSearch(
       const realLast = enriched?.last_name ?? null;
       const guessLast = person.last_name ?? null;
 
-      const location = [person.city, person.state, person.country]
+      // api_search omits city/state; the enriched record has them.
+      const location = [
+        person.city ?? enriched?.city,
+        person.state ?? enriched?.state,
+        person.country ?? enriched?.country,
+      ]
         .filter(Boolean)
         .join(", ");
 
