@@ -13,6 +13,8 @@ import {
 } from "@/lib/pipeline";
 import { TavilyButton } from "./TavilyButton";
 import { LinkedInButton } from "./LinkedInButton";
+import { ContactCompleteness } from "./ContactCompleteness";
+import { CompanyRefreshButton } from "./CompanyRefreshButton";
 import { DraftPanel } from "./DraftPanel";
 import { EmailThread } from "./EmailThread";
 import { ResearchNotes } from "./ResearchNotes";
@@ -172,6 +174,11 @@ export default async function ContactDetailPage({ params }: PageProps) {
             </a>
           )}
         </div>
+        <ContactCompleteness
+          contactId={contact.id}
+          hasEmail={!!contact.email}
+          hasLinkedin={!!contact.linkedin_url}
+        />
       </div>
 
       {/* ── Research panel ───────────────────────────────────────────── */}
@@ -232,14 +239,20 @@ export default async function ContactDetailPage({ params }: PageProps) {
         initialSubject={contact.draft_subject ?? ""}
         initialBody={contact.draft_body ?? ""}
         outlookConnected={outlookConnected}
+        hasEmail={!!contact.email}
       />
 
       {/* ── Company panel ───────────────────────────────────────────── */}
       {company && (
         <section className="rounded-lg bg-white p-6 ring-1 ring-slate-200">
-          <h2 className="text-base font-semibold text-slate-900">
-            {company.name}
-          </h2>
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-base font-semibold text-slate-900">
+              {company.name}
+            </h2>
+            {(!company.industry || !company.size_range) && (
+              <CompanyRefreshButton contactId={contact.id} />
+            )}
+          </div>
           <dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
             {company.industry && (
               <CompanyField label="Industry" value={company.industry} />
@@ -271,7 +284,7 @@ export default async function ContactDetailPage({ params }: PageProps) {
           </dl>
           {!company.industry && !company.domain && !company.size_range && (
             <p className="mt-3 text-sm text-slate-500">
-              Enrich the contact to populate company details.
+              No details yet. Fill in from Apollo, or enrich the contact.
             </p>
           )}
         </section>
@@ -345,7 +358,7 @@ function LinkedInDataBlock({
         <summary className="cursor-pointer select-none text-xs text-slate-500 hover:text-slate-700">
           Show raw LinkedIn payload
         </summary>
-        <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-indigo-600 p-3 text-xs leading-relaxed text-slate-100">
+        <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-slate-800 p-3 text-xs leading-relaxed text-slate-100">
           {JSON.stringify(payload, null, 2)}
         </pre>
       </details>
@@ -383,7 +396,7 @@ function TavilyDataBlock({
         <summary className="cursor-pointer select-none text-xs text-slate-500 hover:text-slate-700">
           Show raw Tavily payload
         </summary>
-        <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-indigo-600 p-3 text-xs leading-relaxed text-slate-100">
+        <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-slate-800 p-3 text-xs leading-relaxed text-slate-100">
           {JSON.stringify(payload, null, 2)}
         </pre>
       </details>

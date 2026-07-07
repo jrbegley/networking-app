@@ -278,12 +278,34 @@ export async function bulkEnrichByApolloId(
   }));
 }
 
-export async function enrichPersonByLinkedInUrl(
-  linkedinUrl: string,
+export type ApolloMatchParams = {
+  linkedinUrl?: string;
+  firstName?: string;
+  lastName?: string;
+  organizationName?: string;
+  domain?: string; // company domain — sharpens name-based matches
+};
+
+/**
+ * Match a person in Apollo (1 credit on success). A LinkedIn URL is the
+ * strongest key; name + company works when there's no URL yet.
+ */
+export async function matchPerson(
+  params: ApolloMatchParams,
 ): Promise<ApolloMatchResponse> {
   const apiKey = process.env.APOLLO_API_KEY;
   if (!apiKey) {
     throw new Error("APOLLO_API_KEY not set");
+  }
+
+  const body: Record<string, string> = {};
+  if (params.linkedinUrl) body.linkedin_url = params.linkedinUrl;
+  if (params.firstName) body.first_name = params.firstName;
+  if (params.lastName) body.last_name = params.lastName;
+  if (params.organizationName) body.organization_name = params.organizationName;
+  if (params.domain) body.domain = params.domain;
+  if (!Object.keys(body).length) {
+    throw new Error("matchPerson needs at least one identifying field");
   }
 
   const res = await fetch(`${APOLLO_BASE}/people/match`, {
@@ -294,7 +316,7 @@ export async function enrichPersonByLinkedInUrl(
       "X-Api-Key": apiKey,
       accept: "application/json",
     },
-    body: JSON.stringify({ linkedin_url: linkedinUrl }),
+    body: JSON.stringify(body),
     cache: "no-store",
   });
 
@@ -307,4 +329,57 @@ export async function enrichPersonByLinkedInUrl(
 
   const data = (await res.json()) as ApolloMatchResponse;
   return data;
+}
+
+export async function enrichPersonByLinkedInUrl(
+  linkedinUrl: string,
+): Promise<ApolloMatchResponse> {
+  return matchPerson({ linkedinUrl });
+}
+
+// ── Organization enrichment ────────────────────────────────────────────
+
+export type ApolloOrgDetails = {
+  id: string | null;
+  name: string | null;
+  primary_domain: string | null;
+  industry: string | null;
+  estimated_num_employees: number | null;
+  linkedin_url: string | null;
+};
+
+/**
+ * Company details by domain via organizations/enrich — the same
+ * deterministic lookup the people search uses to resolve org ids.
+ */
+export async function enrichOrganizationByDomain(
+  domain: string,
+): Promise<ApolloOrgDetails | null> {
+  const apiKey = process.env.APOLLO_API_KEY;
+  if (!apiKey) throw new Error("APOLLO_API_KEY not set");
+
+  const res = await fetch(
+    `${APOLLO_BASE}/organizations/enrich?domain=${encodeURIComponent(domain.toLowerCase().trim())}`,
+    {
+      headers: { "X-Api-Key": apiKey, accept: "application/json" },
+      cache: "no-store",
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Apollo org enrich ${res.status}: ${text.slice(0, 200)}`);
+  }
+
+  const data = await res.json();
+  const org = data.organization as Record<string, unknown> | undefined;
+  if (!org) return null;
+  return {
+    id: (org.id as string | undefined) ?? null,
+    name: (org.name as string | undefined) ?? null,
+    primary_domain: (org.primary_domain as string | undefined) ?? null,
+    industry: (org.industry as string | undefined) ?? null,
+    estimated_num_employees:
+      (org.estimated_num_employees as number | undefined) ?? null,
+    linkedin_url: (org.linkedin_url as string | undefined) ?? null,
+  };
 }

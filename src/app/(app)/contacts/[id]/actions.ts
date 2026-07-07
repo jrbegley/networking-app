@@ -1,7 +1,13 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { enrichPersonByLinkedInUrl } from "@/lib/apollo";
+import {
+  enrichPersonByLinkedInUrl,
+  matchPerson,
+  enrichOrganizationByDomain,
+} from "@/lib/apollo";
+import { resolveLinkedInUrl } from "@/lib/linkedin-resolver";
+import { cleanTitle, repairName, nameLooksBroken } from "@/lib/hygiene";
 import {
   searchTavily,
   extractTavily,
@@ -160,7 +166,9 @@ export async function enrichContact(
   // Backfill contact fields if currently empty
   const contactUpdate: Record<string, unknown> = {};
   if (!contact.email && person.email) contactUpdate.email = person.email;
-  if (!contact.title && person.title) contactUpdate.title = person.title;
+  if (!contact.title && person.title) {
+    contactUpdate.title = cleanTitle(person.title);
+  }
   // Only advance stage if Apollo actually returned useful data (not a free-tier shell)
   if (
     contact.current_stage === "identified" &&
@@ -327,17 +335,29 @@ export async function enrichWithLinkedin(
     : [];
   const currentJob = exp[0] ?? null;
 
-  const scrapedTitle =
+  const scrapedTitle = cleanTitle(
     (typeof currentJob?.["position"] === "string" ? currentJob["position"] : null) ??
-    profile.headline ??
-    null;
+      profile.headline ??
+      null,
+  );
   const scrapedCompany =
     typeof currentJob?.["companyName"] === "string"
       ? (currentJob["companyName"] as string).trim()
       : null;
 
   const contactUpdate: Record<string, unknown> = {};
-  if (!contact.title && scrapedTitle) contactUpdate.title = scrapedTitle;
+  // Backfill missing titles; also replace titles that are clearly a full
+  // LinkedIn headline crammed into the field.
+  if (scrapedTitle && (!contact.title || contact.title.includes("|"))) {
+    contactUpdate.title = scrapedTitle;
+  }
+  // Repair names that came from obfuscated Apollo data — the scraped
+  // profile knows the real one. Never touches a healthy name.
+  const scrapedName =
+    (profile.name as string | undefined) ??
+    [profile.firstName, profile.lastName].filter(Boolean).join(" ");
+  const repaired = repairName(contact.name, scrapedName);
+  if (repaired) contactUpdate.name = repaired;
   if (contact.current_stage === "identified") {
     contactUpdate.current_stage = "researched";
   }
@@ -1145,4 +1165,258 @@ export async function saveDraftForContact(
 
   revalidatePath(`/contacts/${contactId}`);
   return { error: null, saved: true };
+}
+
+// ── Contact hygiene: find LinkedIn / find email / company details ──────
+
+export type FindLinkedInResult = { error: string | null; url: string | null };
+
+/**
+ * Find this contact's LinkedIn profile with the verified resolver
+ * (LinkedIn search + web search candidates, Claude verification against
+ * known facts). Only a high-confidence match is saved.
+ */
+export async function findLinkedInForContact(
+  contactId: string,
+): Promise<FindLinkedInResult> {
+  if (!contactId) return { error: "Missing contact id.", url: null };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in.", url: null };
+
+  const { data: contact } = await supabase
+    .from("contacts")
+    .select("id, name, title, linkedin_url, company:companies(name)")
+    .eq("id", contactId)
+    .maybeSingle();
+  if (!contact) return { error: "Contact not found.", url: null };
+  if (contact.linkedin_url) return { error: null, url: contact.linkedin_url };
+
+  const company = Array.isArray(contact.company)
+    ? (contact.company[0] ?? null)
+    : (contact.company as { name: string } | null);
+
+  const parts = contact.name.trim().split(/\s+/);
+  const firstName = parts[0] ?? "";
+  const lastName = parts.slice(1).join(" ") || null;
+  if (!firstName) return { error: "Contact has no usable name.", url: null };
+
+  const { url } = await resolveLinkedInUrl({
+    firstName,
+    lastName,
+    // A broken-looking stored name (obfuscated import) is a search hint,
+    // not a verification fact.
+    lastNameTrusted: !!lastName && !nameLooksBroken(contact.name),
+    company: company?.name ?? null,
+    title: contact.title ?? null,
+    location: null,
+  });
+
+  if (!url) {
+    return {
+      error:
+        "No confident match found. If you know the profile, add the URL via Edit.",
+      url: null,
+    };
+  }
+
+  const { error } = await supabase
+    .from("contacts")
+    .update({ linkedin_url: url })
+    .eq("id", contactId);
+  if (error) {
+    return {
+      error: `Found ${url} but couldn't save it: ${error.message}`,
+      url: null,
+    };
+  }
+
+  revalidatePath(`/contacts/${contactId}`);
+  revalidatePath("/contacts");
+  return { error: null, url };
+}
+
+export type FindEmailResult = {
+  error: string | null;
+  email: string | null;
+  message: string | null;
+};
+
+/**
+ * Find this contact's email via Apollo person match (1 credit on a fresh
+ * hit; cached Apollo data within 30 days is reused for free). Matches by
+ * LinkedIn URL when available, otherwise by name + company.
+ */
+export async function findEmailForContact(
+  contactId: string,
+): Promise<FindEmailResult> {
+  if (!contactId) return { error: "Missing contact id.", email: null, message: null };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in.", email: null, message: null };
+
+  const { data: contact } = await supabase
+    .from("contacts")
+    .select("id, name, title, email, linkedin_url, company:companies(name, domain)")
+    .eq("id", contactId)
+    .maybeSingle();
+  if (!contact) return { error: "Contact not found.", email: null, message: null };
+  if (contact.email) return { error: null, email: contact.email, message: null };
+
+  const company = Array.isArray(contact.company)
+    ? (contact.company[0] ?? null)
+    : (contact.company as { name: string; domain: string | null } | null);
+
+  // Free path first: a recent Apollo artifact may already hold the email.
+  const cutoff = new Date(
+    Date.now() - CACHE_FRESH_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  const { data: cached } = await supabase
+    .from("research_artifacts")
+    .select("payload")
+    .eq("contact_id", contactId)
+    .eq("source", "apollo")
+    .gte("created_at", cutoff)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const cachedEmail = (cached?.payload as { person?: { email?: string | null } } | null)
+    ?.person?.email;
+  if (cachedEmail) {
+    await supabase.from("contacts").update({ email: cachedEmail }).eq("id", contactId);
+    revalidatePath(`/contacts/${contactId}`);
+    return {
+      error: null,
+      email: cachedEmail,
+      message: "Email found in cached Apollo data. No credit burned.",
+    };
+  }
+
+  // Paid path: Apollo person match.
+  const parts = contact.name.trim().split(/\s+/);
+  const canMatchByName =
+    parts.length >= 2 && !nameLooksBroken(contact.name) && !!company?.name;
+  if (!contact.linkedin_url && !canMatchByName) {
+    return {
+      error:
+        "Need either a LinkedIn URL or a full name plus company to look up an email. Try Find LinkedIn first.",
+      email: null,
+      message: null,
+    };
+  }
+
+  let person;
+  try {
+    const response = contact.linkedin_url
+      ? await matchPerson({ linkedinUrl: contact.linkedin_url })
+      : await matchPerson({
+          firstName: parts[0],
+          lastName: parts.slice(1).join(" "),
+          organizationName: company!.name,
+          domain: company?.domain ?? undefined,
+        });
+    person = response.person;
+
+    // Cache whatever came back, including misses.
+    await supabase.from("research_artifacts").insert({
+      owner_id: user.id,
+      contact_id: contactId,
+      source: "apollo",
+      payload: response,
+    });
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Apollo call failed.",
+      email: null,
+      message: null,
+    };
+  }
+
+  if (!person?.email) {
+    return {
+      error: "Apollo has no verified email for this person.",
+      email: null,
+      message: null,
+    };
+  }
+
+  const update: Record<string, unknown> = { email: person.email };
+  if (!contact.title && person.title) update.title = cleanTitle(person.title);
+  const repaired = repairName(contact.name, person.name);
+  if (repaired) update.name = repaired;
+  await supabase.from("contacts").update(update).eq("id", contactId);
+
+  revalidatePath(`/contacts/${contactId}`);
+  revalidatePath("/contacts");
+  return { error: null, email: person.email, message: "Email found via Apollo." };
+}
+
+export type CompanyEnrichResult = { error: string | null; message: string | null };
+
+/**
+ * Fill in the company card (industry, size, LinkedIn) from Apollo's
+ * organization data, looked up by the company's domain.
+ */
+export async function enrichCompanyDetails(
+  contactId: string,
+): Promise<CompanyEnrichResult> {
+  if (!contactId) return { error: "Missing contact id.", message: null };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in.", message: null };
+
+  const { data: contact } = await supabase
+    .from("contacts")
+    .select("company_id, company:companies(id, name, domain)")
+    .eq("id", contactId)
+    .maybeSingle();
+  const company = Array.isArray(contact?.company)
+    ? (contact?.company[0] ?? null)
+    : ((contact?.company ?? null) as { id: string; name: string; domain: string | null } | null);
+  if (!company) return { error: "No company on this contact.", message: null };
+  if (!company.domain) {
+    return {
+      error:
+        "No domain on file for this company. Apollo enrichment on the contact usually fills it in.",
+      message: null,
+    };
+  }
+
+  let org;
+  try {
+    org = await enrichOrganizationByDomain(company.domain);
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Apollo call failed.",
+      message: null,
+    };
+  }
+  if (!org) {
+    return { error: `Apollo doesn't know ${company.domain}.`, message: null };
+  }
+
+  const update: Record<string, unknown> = {};
+  if (org.industry) update.industry = org.industry;
+  if (org.estimated_num_employees) {
+    update.size_range = String(org.estimated_num_employees);
+  }
+  if (org.linkedin_url) update.linkedin_url = org.linkedin_url;
+  if (org.id) update.apollo_id = org.id;
+  if (!Object.keys(update).length) {
+    return { error: "Apollo returned no additional details.", message: null };
+  }
+
+  await supabase.from("companies").update(update).eq("id", company.id);
+  revalidatePath(`/contacts/${contactId}`);
+  return { error: null, message: "Company details updated." };
 }

@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { searchPeople, bulkEnrichByApolloId, type ApolloSearchPerson } from "@/lib/apollo";
 import { translateSearchQuery, inferLastNamesFromObfuscated } from "@/lib/claude";
 import { resolveLinkedInUrl } from "@/lib/linkedin-resolver";
+import { cleanTitle } from "@/lib/hygiene";
 import { revalidatePath } from "next/cache";
 
 export type SearchResult = ApolloSearchPerson & {
@@ -257,7 +258,7 @@ export async function addContactsFromSearch(
       .insert({
         owner_id: user.id,
         name: buildName(person, enriched),
-        title: person.title ?? enriched?.title ?? null,
+        title: cleanTitle(person.title ?? enriched?.title ?? null),
         email: enriched?.email ?? null,
         linkedin_url: apolloUrl,
         apollo_id: person.id ?? null,

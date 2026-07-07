@@ -23,12 +23,14 @@ export function DraftPanel({
   initialSubject,
   initialBody,
   outlookConnected,
+  hasEmail,
 }: {
   contactId: string;
   hasResearch: boolean;
   initialSubject: string;
   initialBody: string;
   outlookConnected: boolean;
+  hasEmail: boolean;
 }) {
   const [subject, setSubject] = useState(initialSubject);
   const [body, setBody] = useState(initialBody);
@@ -239,10 +241,19 @@ export function DraftPanel({
                 <button
                   type="button"
                   onClick={handleOutlook}
-                  disabled={busy !== null}
+                  disabled={busy !== null || !hasEmail}
+                  title={
+                    hasEmail
+                      ? undefined
+                      : "This contact has no email address yet — use Find email in the header."
+                  }
                   className="rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {busy === "outlook" ? "Sending…" : "→ Outlook Drafts"}
+                  {busy === "outlook"
+                    ? "Sending…"
+                    : hasEmail
+                      ? "→ Outlook Drafts"
+                      : "No email yet"}
                 </button>
               ) : (
                 <a
