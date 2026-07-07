@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { SettingsForm } from "./SettingsForm";
 import { OutlookSection } from "./OutlookSection";
+import { CadenceSection } from "./CadenceSection";
+import type { CadenceRule } from "@/lib/cadence";
 
 export default async function SettingsPage({
   searchParams,
@@ -24,6 +26,12 @@ export default async function SettingsPage({
   const outlookEmail = profile?.outlook_email ?? null;
   const outlookConnected = !!(profile?.outlook_access_token);
 
+  const { data: ruleRows } = await supabase
+    .from("cadence_rules")
+    .select("id, name, trigger_stage, wait_days, enabled")
+    .order("created_at", { ascending: true });
+  const cadenceRules = (ruleRows ?? []) as CadenceRule[];
+
   return (
     <div className="max-w-3xl space-y-10">
       <div>
@@ -45,6 +53,9 @@ export default async function SettingsPage({
         flashConnected={sp.outlook_connected === "1"}
         flashError={sp.outlook_error ?? null}
       />
+
+      {/* Follow-up cadence rules */}
+      <CadenceSection rules={cadenceRules} />
 
       {/* Profile / Claude context */}
       <SettingsForm

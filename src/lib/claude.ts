@@ -412,6 +412,56 @@ export async function draftOutreachEmail(opts: DraftContext): Promise<Draft> {
   return runDraftModel(buildSystemBlocks(opts.sender), parts.join("\n\n"));
 }
 
+// ── Follow-up drafting ─────────────────────────────────────────────────
+
+export type ThreadMessage = {
+  direction: "sent" | "received";
+  subject: string | null;
+  body: string | null;
+  at: string;
+};
+
+/**
+ * Draft a follow-up to an existing email thread. Reuses the locked system
+ * prompt (all sourcing/style rules apply) and adds follow-up-specific rules
+ * in the user message: shorter, references the original without repeating
+ * it, no guilt language, reply-style subject.
+ */
+export async function draftFollowUpEmail(
+  opts: DraftContext & { thread: ThreadMessage[] },
+): Promise<Draft> {
+  const threadLines = opts.thread.map((m) => {
+    const who = m.direction === "sent" ? "SENDER (the user)" : "RECIPIENT";
+    return `--- ${who}, ${m.at}${m.subject ? `, subject: ${m.subject}` : ""} ---\n${(m.body ?? "").trim().slice(0, 1500)}`;
+  });
+
+  const lastSentSubject =
+    [...opts.thread].reverse().find((m) => m.direction === "sent" && m.subject)
+      ?.subject ?? null;
+
+  const userMessage = [
+    "Draft a FOLLOW-UP email to an earlier outreach that got no reply (or continues the thread below). Every rule in the system prompt applies, plus these follow-up rules:",
+    "- 40 to 90 words. A follow-up is shorter than the original.",
+    "- Do not repeat the original email's content or re-introduce the sender from scratch; one short clause of reintroduction at most.",
+    "- Add ONE new element the original didn't have: a new question angle, a relevant thing the sender has done since, or a sharper, smaller ask.",
+    "- The new element obeys SOURCING DISCIPLINE absolutely. No new claims about the recipient or their firm unless present in the data below. If the new element is something the sender has done since, it must come from the sender profile or stay so general it cannot be false (continuing coursework, ongoing recruiting prep). Inventing a firm initiative to sound current is the failure mode here.",
+    '- Banned follow-up language: "just checking in", "bumping this", "circling back", "I know you\'re busy", "in case you missed", "gentle reminder". No apologizing for following up.',
+    "- The ask can be smaller than the original (a single specific question is fine).",
+    lastSentSubject
+      ? `- Subject line: exactly "Re: ${lastSentSubject}"`
+      : "- Subject line: fresh, per the system prompt rules.",
+    "",
+    buildRecipientContext(opts),
+    "",
+    "THE THREAD SO FAR (oldest first):",
+    ...threadLines,
+    "",
+    "Output in the exact SUBJECT/BODY format from the system prompt, nothing else.",
+  ].join("\n");
+
+  return runDraftModel(buildSystemBlocks(opts.sender), userMessage);
+}
+
 /**
  * Revise an existing draft based on a free-form user instruction. Reuses the
  * same locked system prompt, so every style and sourcing rule still applies to
@@ -448,7 +498,11 @@ function parseDraft(text: string): { subject: string; body: string } {
   const bodyMatch = text.match(/BODY:\s*([\s\S]+)$/i);
   return {
     subject: subjectMatch?.[1]?.trim() ?? "(no subject)",
-    body: bodyMatch?.[1]?.trim() ?? text.trim(),
+    // Fallback when the BODY: marker is missing: strip any SUBJECT lines so
+    // they don't leak into the email body.
+    body:
+      bodyMatch?.[1]?.trim() ??
+      text.replace(/^\s*SUBJECT:.*$/gim, "").trim(),
   };
 }
 

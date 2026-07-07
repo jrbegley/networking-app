@@ -13,6 +13,79 @@ export type ProfileFormState = {
   saved: boolean;
 };
 
+// ── Cadence rules ──────────────────────────────────────────────────────
+
+export type CadenceActionResult = { error: string | null };
+
+export async function addCadenceRule(
+  triggerStage: string,
+  waitDays: number,
+): Promise<CadenceActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  if (!Number.isInteger(waitDays) || waitDays < 1 || waitDays > 365) {
+    return { error: "Wait must be between 1 and 365 days." };
+  }
+
+  const { error } = await supabase.from("cadence_rules").insert({
+    owner_id: user.id,
+    name: `After ${triggerStage}, wait ${waitDays} day${waitDays === 1 ? "" : "s"}`,
+    trigger_stage: triggerStage,
+    wait_days: waitDays,
+    enabled: true,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/settings");
+  revalidatePath("/contacts");
+  return { error: null };
+}
+
+export async function setCadenceRuleEnabled(
+  ruleId: string,
+  enabled: boolean,
+): Promise<CadenceActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  const { error } = await supabase
+    .from("cadence_rules")
+    .update({ enabled })
+    .eq("id", ruleId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/settings");
+  revalidatePath("/contacts");
+  return { error: null };
+}
+
+export async function deleteCadenceRule(
+  ruleId: string,
+): Promise<CadenceActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  const { error } = await supabase
+    .from("cadence_rules")
+    .delete()
+    .eq("id", ruleId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/settings");
+  revalidatePath("/contacts");
+  return { error: null };
+}
+
 export type RecordResumeState = {
   error: string | null;
   saved: boolean;

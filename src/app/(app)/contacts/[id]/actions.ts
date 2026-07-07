@@ -13,6 +13,7 @@ import { isApolloShellResponse } from "@/lib/apollo-summary";
 import {
   draftOutreachEmail,
   refineOutreachEmail,
+  draftFollowUpEmail,
   extractDraftSnippet,
   type Draft,
   type DraftContext,
@@ -816,6 +817,59 @@ async function persistDraft(
       draft_updated_at: new Date().toISOString(),
     })
     .eq("id", contactId);
+}
+
+/**
+ * Draft a follow-up to this contact's email thread and persist it as the
+ * contact's current draft. Requires at least one actually-sent email
+ * (logged by inbox sync from Sent Items).
+ */
+export async function draftFollowUp(
+  contactId: string,
+): Promise<{ error: string | null }> {
+  if (!contactId) return { error: "Missing contact id." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  const { data: emails } = await supabase
+    .from("interactions")
+    .select("type, subject, body, occurred_at")
+    .eq("contact_id", contactId)
+    .in("type", ["email_sent", "email_received"])
+    .order("occurred_at", { ascending: true })
+    .limit(10);
+
+  const thread = (emails ?? []).map((e) => ({
+    direction: e.type === "email_sent" ? ("sent" as const) : ("received" as const),
+    subject: e.subject,
+    body: e.body,
+    at: e.occurred_at,
+  }));
+
+  if (!thread.some((m) => m.direction === "sent")) {
+    return {
+      error:
+        "No sent email on record for this contact yet. Run Sync inbox after sending, then try again.",
+    };
+  }
+
+  const loaded = await loadDraftContext(supabase, user.id, contactId);
+  if (!loaded.context) return { error: loaded.error };
+
+  try {
+    const draft = await draftFollowUpEmail({ ...loaded.context, thread });
+    await persistDraft(supabase, contactId, draft);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Drafting failed." };
+  }
+
+  revalidatePath(`/contacts/${contactId}`);
+  revalidatePath("/contacts");
+  return { error: null };
 }
 
 /**

@@ -1,15 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { syncAllInboxes } from "./actions";
+import { draftFollowUp } from "./[id]/actions";
 import {
   STAGE_LABEL,
   STAGE_BADGE_CLASS,
   PIPELINE_STAGES,
   stageOrder,
+  daysInStage,
+  agingLevel,
   type PipelineStage,
 } from "@/lib/pipeline";
+import type { DueFollowUp } from "@/lib/cadence";
 
 export type ContactRow = {
   id: string;
@@ -18,6 +23,7 @@ export type ContactRow = {
   email: string | null;
   linkedin_url: string | null;
   current_stage: PipelineStage;
+  stage_changed_at: string | null;
   company: { id: string; name: string; industry: string | null } | null;
 };
 
@@ -32,9 +38,15 @@ const NO_GROUP_LABEL: Record<GroupBy, string> = {
 export function PipelineView({
   contacts,
   outlookConnected,
+  dueFollowUps,
+  hasCadenceRules,
+  hasStageTiming,
 }: {
   contacts: ContactRow[];
   outlookConnected: boolean;
+  dueFollowUps: DueFollowUp[];
+  hasCadenceRules: boolean;
+  hasStageTiming: boolean;
 }) {
   const [groupBy, setGroupBy] = useState<GroupBy>("company");
   const [syncing, startSync] = useTransition();
@@ -119,6 +131,21 @@ export function PipelineView({
       {syncStatus && (
         <p className={`mt-2 text-sm ${syncStatus.startsWith("Error") ? "text-red-600" : "text-slate-500"}`}>
           {syncStatus}
+        </p>
+      )}
+
+      {/* Due follow-ups */}
+      {dueFollowUps.length > 0 && (
+        <DueFollowUpsBanner items={dueFollowUps} />
+      )}
+      {contacts.length > 0 && !hasCadenceRules && hasStageTiming && (
+        <p className="mt-4 rounded-md bg-slate-100 px-4 py-3 text-sm text-slate-600">
+          No follow-up rules set. Add one in{" "}
+          <Link href="/settings" className="font-medium text-indigo-600 hover:underline">
+            Settings
+          </Link>{" "}
+          (for example: after Sent, wait 5 days) and overdue contacts will
+          surface here.
         </p>
       )}
 
@@ -229,6 +256,98 @@ function buildGroups(contacts: ContactRow[], groupBy: GroupBy): Group[] {
 
 // ── Subcomponents ──────────────────────────────────────────────────────
 
+function DueFollowUpsBanner({ items }: { items: DueFollowUp[] }) {
+  const router = useRouter();
+  const [drafting, startDrafting] = useTransition();
+  const [draftingId, setDraftingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function handleDraftFollowUp(contactId: string) {
+    setError(null);
+    setDraftingId(contactId);
+    startDrafting(async () => {
+      const r = await draftFollowUp(contactId);
+      if (r.error) {
+        setError(r.error);
+        setDraftingId(null);
+      } else {
+        router.push(`/contacts/${contactId}`);
+      }
+    });
+  }
+
+  return (
+    <section className="mt-4 overflow-hidden rounded-xl bg-amber-50 shadow-sm ring-1 ring-amber-200">
+      <header className="flex items-center gap-2 border-b border-amber-200/60 px-5 py-3">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          className="h-4 w-4 text-amber-600"
+          aria-hidden="true"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
+        </svg>
+        <h2 className="text-sm font-semibold text-amber-900">
+          Due follow-ups
+        </h2>
+        <span className="text-xs font-medium text-amber-700">
+          {items.length}
+        </span>
+      </header>
+      {error && (
+        <p className="px-5 pt-3 text-sm text-red-600">{error}</p>
+      )}
+      <ul className="divide-y divide-amber-100">
+        {items.map((item) => (
+          <li
+            key={item.contactId}
+            className="flex items-center justify-between gap-4 px-5 py-3"
+          >
+            <div className="min-w-0">
+              <Link
+                href={`/contacts/${item.contactId}`}
+                className="text-sm font-medium text-slate-900 hover:text-indigo-700"
+              >
+                {item.contactName}
+              </Link>
+              <p className="text-xs text-amber-800">
+                {item.stageLabel} for {item.daysWaiting} day
+                {item.daysWaiting === 1 ? "" : "s"}
+                {item.companyName ? ` · ${item.companyName}` : ""}
+              </p>
+            </div>
+            {item.stage === "sent" ? (
+              <button
+                type="button"
+                onClick={() => handleDraftFollowUp(item.contactId)}
+                disabled={drafting}
+                className="cursor-pointer rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-colors duration-150 hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {drafting && draftingId === item.contactId
+                  ? "Drafting…"
+                  : "Draft follow-up"}
+              </button>
+            ) : (
+              <Link
+                href={`/contacts/${item.contactId}`}
+                className="rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors duration-150 hover:bg-amber-100"
+              >
+                Open
+              </Link>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function EmptyState() {
   return (
     <div className="mt-8 rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center">
@@ -307,18 +426,47 @@ function ContactItem({
             {groupBy !== "company" && contact.company ? contact.company.name : ""}
           </p>
         </div>
-        {/* When grouped by stage, the stage badge is redundant — show company instead */}
-        {groupBy === "stage" ? (
-          contact.company ? (
-            <span className="shrink-0 text-xs text-slate-500">
-              {contact.company.name}
-            </span>
-          ) : null
-        ) : (
-          <StageBadge stage={contact.current_stage} />
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          <AgeChip
+            stage={contact.current_stage}
+            stageChangedAt={contact.stage_changed_at}
+          />
+          {/* When grouped by stage, the stage badge is redundant — show company instead */}
+          {groupBy === "stage" ? (
+            contact.company ? (
+              <span className="text-xs text-slate-500">
+                {contact.company.name}
+              </span>
+            ) : null
+          ) : (
+            <StageBadge stage={contact.current_stage} />
+          )}
+        </div>
       </Link>
     </li>
+  );
+}
+
+function AgeChip({
+  stage,
+  stageChangedAt,
+}: {
+  stage: PipelineStage;
+  stageChangedAt: string | null;
+}) {
+  const days = daysInStage(stageChangedAt);
+  if (days === null || days < 1) return null;
+  const level = agingLevel(stage, days);
+  if (level === "none") return null;
+  return (
+    <span
+      className={`text-xs font-medium ${
+        level === "overdue" ? "text-red-600" : "text-amber-600"
+      }`}
+      title={`${days} days in this stage`}
+    >
+      {days}d
+    </span>
   );
 }
 

@@ -54,3 +54,36 @@ export const STAGE_BADGE_CLASS: Record<PipelineStage, string> = {
 export function stageOrder(stage: PipelineStage): number {
   return PIPELINE_STAGES.indexOf(stage);
 }
+
+// ── Stage aging ────────────────────────────────────────────────────────
+//
+// "Waiting" only means something in stages where the ball is in the
+// user's court (drafted: send it; replied: answer them) or where silence
+// accumulates (sent). Terminal-ish stages don't age.
+
+export const AGING_STAGES: ReadonlySet<PipelineStage> = new Set([
+  "identified",
+  "researched",
+  "drafted",
+  "sent",
+  "replied",
+] as PipelineStage[]);
+
+export function daysInStage(stageChangedAt: string | null): number | null {
+  if (!stageChangedAt) return null;
+  const ms = Date.now() - Date.parse(stageChangedAt);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  return Math.floor(ms / 86_400_000);
+}
+
+export type AgingLevel = "none" | "warm" | "overdue";
+
+export function agingLevel(
+  stage: PipelineStage,
+  days: number | null,
+): AgingLevel {
+  if (days === null || !AGING_STAGES.has(stage)) return "none";
+  if (days >= 10) return "overdue";
+  if (days >= 4) return "warm";
+  return "none";
+}
