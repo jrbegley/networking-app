@@ -49,7 +49,10 @@ export function CoverLetterPanel({
   function runGenerate(jd?: string) {
     setErrorReason(null);
     setNoTemplate(false);
+    setPasteMode(false);
     setSaved(false);
+    setContent(null);
+    setClassification(null);
     startTransition(async () => {
       const res = await generateCoverLetterForApplication(applicationId, jd);
       if (res.ok) {
@@ -95,6 +98,7 @@ export function CoverLetterPanel({
       );
       if (res.ok) {
         setContent(res.content);
+        setSaved(false);
         setMessages((m) => [
           ...m,
           { role: "assistant", text: "Updated the letter." },
