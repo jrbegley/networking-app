@@ -183,6 +183,91 @@ export async function deleteResume(): Promise<RecordResumeState> {
   return { error: null, saved: true };
 }
 
+export type RecordCoverLetterTemplateState = {
+  error: string | null;
+  saved: boolean;
+};
+
+/**
+ * Called right after a client-side cover-letter template upload to
+ * Supabase Storage succeeds. Updates the profile with the filename and
+ * timestamp so the settings UI can show "Current template: <name>".
+ */
+export async function recordCoverLetterTemplate(
+  filename: string,
+): Promise<RecordCoverLetterTemplateState> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in.", saved: false };
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      cover_letter_template_name: filename,
+      cover_letter_template_at: new Date().toISOString(),
+    })
+    .eq("id", user.id);
+
+  if (error) return { error: error.message, saved: false };
+
+  revalidatePath("/settings");
+  return { error: null, saved: true };
+}
+
+/**
+ * Issue a short-lived signed URL for the user's cover-letter template so
+ * they can view/download it from the settings page. Signed URLs respect
+ * RLS so we couldn't accidentally hand out another user's file even if we
+ * tried.
+ */
+export async function coverLetterTemplateUrl(): Promise<{
+  url: string | null;
+  error: string | null;
+}> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { url: null, error: "Not signed in." };
+
+  const path = `${user.id}/template.docx`;
+  const { data, error } = await supabase.storage
+    .from("cover-letter-templates")
+    .createSignedUrl(path, 60);
+
+  if (error) return { url: null, error: error.message };
+  return { url: data.signedUrl, error: null };
+}
+
+/**
+ * Delete the user's cover-letter template and clear the metadata columns.
+ */
+export async function clearCoverLetterTemplate(): Promise<RecordCoverLetterTemplateState> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in.", saved: false };
+
+  const path = `${user.id}/template.docx`;
+  await supabase.storage.from("cover-letter-templates").remove([path]);
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      cover_letter_template_name: null,
+      cover_letter_template_at: null,
+    })
+    .eq("id", user.id);
+
+  if (error) return { error: error.message, saved: false };
+
+  revalidatePath("/settings");
+  return { error: null, saved: true };
+}
+
 /**
  * Update the signed-in user's profile background fields.
  * RLS already restricts them to their own row, but we also scope by id

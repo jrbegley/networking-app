@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SettingsForm } from "./SettingsForm";
 import { OutlookSection } from "./OutlookSection";
 import { CadenceSection } from "./CadenceSection";
+import { CoverLetterTemplateSection } from "./CoverLetterTemplateSection";
 import type { CadenceRule } from "@/lib/cadence";
 
 export default async function SettingsPage({
@@ -15,13 +16,42 @@ export default async function SettingsPage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { data: profile } = await supabase
+  type ProfileRow = {
+    display_name: string | null;
+    bio: string | null;
+    resume_text: string | null;
+    outreach_goal: string | null;
+    linkedin_url: string | null;
+    resume_pdf_name: string | null;
+    resume_pdf_uploaded_at: string | null;
+    outlook_email: string | null;
+    outlook_access_token: string | null;
+    cover_letter_template_name?: string | null;
+    cover_letter_template_at?: string | null;
+  };
+
+  const PROFILE_FIELDS =
+    "display_name, bio, resume_text, outreach_goal, linkedin_url, resume_pdf_name, resume_pdf_uploaded_at, outlook_email, outlook_access_token";
+
+  // cover_letter_template_name/at arrive with migration 009. Until it's
+  // applied, fall back to a query without them so the page still renders.
+  let profile: ProfileRow | null = null;
+  const first = await supabase
     .from("profiles")
-    .select(
-      "display_name, bio, resume_text, outreach_goal, linkedin_url, resume_pdf_name, resume_pdf_uploaded_at, outlook_email, outlook_access_token",
-    )
+    .select(`${PROFILE_FIELDS}, cover_letter_template_name, cover_letter_template_at`)
     .eq("id", user?.id ?? "")
     .maybeSingle();
+
+  if (first.error && /cover_letter/i.test(first.error.message)) {
+    const second = await supabase
+      .from("profiles")
+      .select(PROFILE_FIELDS)
+      .eq("id", user?.id ?? "")
+      .maybeSingle();
+    profile = second.data as ProfileRow | null;
+  } else {
+    profile = first.data as ProfileRow | null;
+  }
 
   const outlookEmail = profile?.outlook_email ?? null;
   const outlookConnected = !!(profile?.outlook_access_token);
@@ -67,6 +97,14 @@ export default async function SettingsPage({
           linkedinUrl: profile?.linkedin_url ?? "",
           resumePdfName: profile?.resume_pdf_name ?? null,
           resumePdfUploadedAt: profile?.resume_pdf_uploaded_at ?? null,
+        }}
+      />
+
+      {/* Cover-letter template */}
+      <CoverLetterTemplateSection
+        initial={{
+          templateName: profile?.cover_letter_template_name ?? null,
+          templateUploadedAt: profile?.cover_letter_template_at ?? null,
         }}
       />
     </div>
