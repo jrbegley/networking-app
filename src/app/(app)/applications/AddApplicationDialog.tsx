@@ -1,11 +1,39 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
-import { createApplication, type ActionResult } from "./actions";
+import {
+  useActionState,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+import {
+  createApplication,
+  readPostingFromUrl,
+  readPostingFromText,
+  type ActionResult,
+  type ReadPostingResult,
+} from "./actions";
 import {
   APPLICATION_STATUSES,
   STATUS_LABEL,
 } from "@/lib/applications";
+
+type Prefill = {
+  company_name: string;
+  role_title: string;
+  location: string;
+  deadline: string;
+  source: string;
+};
+
+const EMPTY_PREFILL: Prefill = {
+  company_name: "",
+  role_title: "",
+  location: "",
+  deadline: "",
+  source: "",
+};
 
 const initialState: ActionResult = { error: null };
 
@@ -24,11 +52,87 @@ export function AddApplicationDialog() {
   const formRef = useRef<HTMLFormElement>(null);
   const wasPending = useRef(false);
 
+  // Job-posting autofill state. The URL box lives ABOVE the form so its value
+  // is never submitted and survives the form remount that prefill triggers.
+  const [url, setUrl] = useState("");
+  const [prefill, setPrefill] = useState<Prefill>(EMPTY_PREFILL);
+  const [formKey, setFormKey] = useState(0);
+  const [pasteMode, setPasteMode] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [filled, setFilled] = useState(false);
+  const [reading, startReading] = useTransition();
+
+  function resetAutofill() {
+    setUrl("");
+    setPrefill(EMPTY_PREFILL);
+    setPasteMode(false);
+    setPasteText("");
+    setFetchError(null);
+    setFilled(false);
+  }
+
+  function handleClose() {
+    setOpen(false);
+    resetAutofill();
+  }
+
+  // Apply a read result: on success prefill the fields and remount the form so
+  // the new defaults take; on needs_paste swap to the paste box; otherwise show
+  // the reason inline and leave the form manually fillable.
+  function applyResult(res: ReadPostingResult) {
+    if (res.ok) {
+      setPrefill({
+        company_name: res.fields.company_name ?? "",
+        role_title: res.fields.role_title ?? "",
+        location: res.fields.location ?? "",
+        deadline: res.fields.deadline ?? "",
+        source: res.source ?? "",
+      });
+      setFormKey((k) => k + 1);
+      setPasteMode(false);
+      setFilled(true);
+    } else if (res.reason === "needs_paste") {
+      setPasteMode(true);
+    } else {
+      setFetchError(res.reason);
+    }
+  }
+
+  function handleFetch() {
+    setFetchError(null);
+    setFilled(false);
+    startReading(async () => {
+      try {
+        applyResult(await readPostingFromUrl(url));
+      } catch {
+        setFetchError(
+          "Something went wrong reading that posting — fill in below.",
+        );
+      }
+    });
+  }
+
+  function handleParse() {
+    setFetchError(null);
+    setFilled(false);
+    startReading(async () => {
+      try {
+        applyResult(await readPostingFromText(pasteText, url || undefined));
+      } catch {
+        setFetchError(
+          "Something went wrong reading that text — fill in below.",
+        );
+      }
+    });
+  }
+
   // Close + reset on a successful submit (no error after a pending cycle).
   useEffect(() => {
     if (wasPending.current && !pending && !state.error) {
       setOpen(false);
       formRef.current?.reset();
+      resetAutofill();
     }
     wasPending.current = pending;
   }, [pending, state.error]);
@@ -58,7 +162,7 @@ export function AddApplicationDialog() {
       {open && (
         <div
           className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 backdrop-blur-sm sm:p-8"
-          onClick={() => setOpen(false)}
+          onClick={handleClose}
         >
           <div
             className="mt-8 w-full max-w-lg rounded-xl bg-white shadow-xl ring-1 ring-slate-200"
@@ -70,7 +174,7 @@ export function AddApplicationDialog() {
               </h2>
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={handleClose}
                 className="cursor-pointer rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                 aria-label="Close"
               >
@@ -86,7 +190,105 @@ export function AddApplicationDialog() {
               </button>
             </div>
 
-            <form ref={formRef} action={formAction} className="space-y-4 px-6 py-5">
+            {/*
+              Autofill panel — OUTSIDE the <form> so the URL/paste text are
+              never submitted as fields and survive the form remount that
+              prefilling triggers. Fetching never saves; only the "Add
+              application" submit inside the form writes anything.
+            */}
+            <div className="border-b border-slate-100 px-6 py-4">
+              {!pasteMode ? (
+                <>
+                  <label
+                    htmlFor="posting_url_fetch"
+                    className="block text-sm font-medium text-slate-700"
+                  >
+                    Posting URL{" "}
+                    <span className="font-normal text-slate-400">
+                      (optional — autofills the form)
+                    </span>
+                  </label>
+                  <div className="mt-1 flex gap-2">
+                    <input
+                      id="posting_url_fetch"
+                      type="url"
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                      placeholder="https://…"
+                      autoComplete="off"
+                      className="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleFetch}
+                      disabled={reading || !url.trim()}
+                      className="shrink-0 cursor-pointer rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {reading ? "Reading posting…" : "Fetch"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <label
+                    htmlFor="posting_paste"
+                    className="block text-sm font-medium text-slate-700"
+                  >
+                    Paste the job description
+                  </label>
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    Couldn&rsquo;t read that page — paste the posting text and
+                    we&rsquo;ll pull out the fields.
+                  </p>
+                  <textarea
+                    id="posting_paste"
+                    value={pasteText}
+                    onChange={(e) => setPasteText(e.target.value)}
+                    rows={5}
+                    placeholder="Paste the full job description here…"
+                    className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <div className="mt-2 flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPasteMode(false);
+                        setPasteText("");
+                        setFetchError(null);
+                      }}
+                      className="cursor-pointer rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-900"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleParse}
+                      disabled={reading || !pasteText.trim()}
+                      className="shrink-0 cursor-pointer rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {reading ? "Reading posting…" : "Parse"}
+                    </button>
+                  </div>
+                </>
+              )}
+              {filled && (
+                <p className="mt-2 text-sm font-medium text-emerald-600">
+                  ✓ Filled from posting · review below
+                </p>
+              )}
+              {fetchError && (
+                <p className="mt-2 text-sm text-red-600">{fetchError}</p>
+              )}
+            </div>
+
+            <form
+              ref={formRef}
+              key={formKey}
+              action={formAction}
+              className="space-y-4 px-6 py-5"
+            >
+              {/* URL carried into createApplication; set from the box above. */}
+              <input type="hidden" name="posting_url" value={url} />
               {state.error && (
                 <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">
                   {state.error}
@@ -98,12 +300,14 @@ export function AddApplicationDialog() {
                   label="Company"
                   name="company_name"
                   required
+                  defaultValue={prefill.company_name}
                   placeholder="Bain & Company"
                 />
                 <Field
                   label="Role"
                   name="role_title"
                   required
+                  defaultValue={prefill.role_title}
                   placeholder="Associate Consultant"
                 />
               </div>
@@ -150,6 +354,7 @@ export function AddApplicationDialog() {
                 <Field
                   label="Location"
                   name="location"
+                  defaultValue={prefill.location}
                   placeholder="Chicago, IL"
                 />
                 <div>
@@ -164,22 +369,17 @@ export function AddApplicationDialog() {
                     id="deadline"
                     name="deadline"
                     type="date"
+                    defaultValue={prefill.deadline}
                     className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   />
                 </div>
               </div>
 
-              <Field
-                label="Posting URL"
-                name="posting_url"
-                type="url"
-                placeholder="https://…"
-              />
-
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field
                   label="Source"
                   name="source"
+                  defaultValue={prefill.source}
                   placeholder="Referral, LinkedIn, career site…"
                 />
               </div>
@@ -203,7 +403,7 @@ export function AddApplicationDialog() {
               <div className="flex items-center justify-end gap-3 pt-1">
                 <button
                   type="button"
-                  onClick={() => setOpen(false)}
+                  onClick={handleClose}
                   className="cursor-pointer rounded-md px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900"
                 >
                   Cancel
@@ -230,12 +430,14 @@ function Field({
   type = "text",
   required = false,
   placeholder,
+  defaultValue,
 }: {
   label: string;
   name: string;
   type?: string;
   required?: boolean;
   placeholder?: string;
+  defaultValue?: string;
 }) {
   return (
     <div>
@@ -249,6 +451,7 @@ function Field({
         type={type}
         required={required}
         placeholder={placeholder}
+        defaultValue={defaultValue}
         autoComplete="off"
         className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
       />

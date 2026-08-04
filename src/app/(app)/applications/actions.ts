@@ -6,8 +6,36 @@ import {
   APPLICATION_STATUSES,
   type ApplicationStatus,
 } from "@/lib/applications";
+import {
+  guardUrl,
+  sourceFromHost,
+  fetchPostingHtml,
+  jobPostingFromJsonLd,
+  htmlToText,
+  THIN_CONTENT_CHARS,
+  type JobPostingFields,
+} from "@/lib/job-posting";
+import { parseJobPosting } from "@/lib/claude";
 
 export type ActionResult = { error: string | null };
+
+/**
+ * Result of reading a posting from a URL or pasted text. Read-only: neither
+ * producer writes to the DB. `needs_paste` signals the URL couldn't be read
+ * and the UI should offer the paste-the-description fallback.
+ */
+export type ReadPostingResult =
+  | {
+      ok: true;
+      fields: {
+        company_name: string | null;
+        role_title: string | null;
+        location: string | null;
+        deadline: string | null;
+      };
+      source: string | null;
+    }
+  | { ok: false; reason: string };
 
 function isStatus(v: unknown): v is ApplicationStatus {
   return (
@@ -195,6 +223,103 @@ export async function addApplicationEvent(
 
   revalidatePath("/applications");
   return { error: null };
+}
+
+/**
+ * Read a job posting from its URL and pull out company / role / location /
+ * deadline for review before saving. Read-only: no DB write, no revalidate.
+ * Prefers embedded JSON-LD (deterministic) and only calls Claude when the
+ * JSON-LD is incomplete. Any fetch failure maps to `needs_paste` so the UI
+ * can offer the paste-the-description fallback.
+ */
+export async function readPostingFromUrl(
+  url: string,
+): Promise<ReadPostingResult> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { ok: false, reason: "Not signed in." };
+
+    const guard = guardUrl(url);
+    if (!guard.ok) {
+      return {
+        ok: false,
+        reason: "That doesn't look like a job posting URL.",
+      };
+    }
+
+    const host = guard.url.hostname;
+    const today = new Date().toISOString().slice(0, 10);
+
+    let html: string;
+    try {
+      html = await fetchPostingHtml(guard.url);
+    } catch {
+      return { ok: false, reason: "needs_paste" };
+    }
+
+    const jsonld = jobPostingFromJsonLd(html);
+
+    let fields: JobPostingFields;
+    if (jsonld && jsonld.company_name && jsonld.role_title) {
+      // JSON-LD gave us the essentials — skip the Claude call entirely.
+      fields = jsonld;
+    } else {
+      const text = htmlToText(html);
+      if (text.length < THIN_CONTENT_CHARS) {
+        return { ok: false, reason: "needs_paste" };
+      }
+      const parsed = await parseJobPosting(text, host, today);
+      // Merge: a non-null JSON-LD value always wins over the parsed one.
+      fields = {
+        company_name: jsonld?.company_name ?? parsed.company_name,
+        role_title: jsonld?.role_title ?? parsed.role_title,
+        location: jsonld?.location ?? parsed.location,
+        deadline: jsonld?.deadline ?? parsed.deadline,
+      };
+    }
+
+    return { ok: true, fields, source: sourceFromHost(host) };
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Read a job posting from pasted description text (the fallback when a URL
+ * can't be fetched). Read-only: no DB write, no revalidate. `url` is optional
+ * and only used to derive the source label.
+ */
+export async function readPostingFromText(
+  text: string,
+  url?: string,
+): Promise<ReadPostingResult> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { ok: false, reason: "Not signed in." };
+
+    let host = "";
+    if (url) {
+      try {
+        host = new URL(url).hostname;
+      } catch {
+        host = "";
+      }
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const parsed = await parseJobPosting(text, host, today);
+    const source = url && host ? sourceFromHost(host) : null;
+
+    return { ok: true, fields: parsed, source };
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export async function deleteApplication(

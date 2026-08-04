@@ -656,6 +656,90 @@ Rules:
   return people.map(() => null);
 }
 
+// ── Job-posting field extraction ───────────────────────────────────────
+
+/**
+ * Extract the four autofill fields from cleaned job-posting text. Used by the
+ * Add Application flow when JSON-LD didn't already give us company + role.
+ *
+ * `today` is passed so relative deadline phrasing ("applications close in two
+ * weeks") resolves; `host` gives the model a hint about the posting's origin.
+ * A field not clearly stated comes back null — never guessed. On any parse
+ * failure this returns an all-null object rather than throwing, so the caller
+ * can always fall through to manual entry.
+ */
+export async function parseJobPosting(
+  text: string,
+  host: string,
+  today: string,
+): Promise<{
+  company_name: string | null;
+  role_title: string | null;
+  location: string | null;
+  deadline: string | null;
+}> {
+  const empty = {
+    company_name: null,
+    role_title: null,
+    location: null,
+    deadline: null,
+  };
+
+  const systemPrompt = `You extract structured facts from job-posting text. Output ONLY valid JSON, no prose, no markdown fences.
+
+Return a JSON object with exactly these four keys:
+- company_name: the hiring company's name, or null
+- role_title: the job title, or null
+- location: the job's location (city/state/country or "Remote"), or null
+- deadline: the application deadline as "YYYY-MM-DD", or null
+
+Rules:
+- A field that is not clearly stated in the text MUST be null. Never guess or infer a value that isn't there.
+- deadline must be an exact "YYYY-MM-DD" date. If the posting gives a relative phrase ("applications close in two weeks", "open until end of month"), resolve it against the provided current date. If no deadline is stated, use null.
+- Do not include any keys other than the four above.`;
+
+  const userMessage = [
+    `Current date: ${today}`,
+    `Posting host: ${host || "(unknown)"}`,
+    "",
+    "JOB POSTING TEXT:",
+    text,
+  ].join("\n");
+
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 300,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userMessage }],
+  });
+
+  const raw = response.content
+    .filter((c): c is Anthropic.TextBlock => c.type === "text")
+    .map((c) => c.text)
+    .join("")
+    .trim();
+
+  try {
+    const clean = raw.replace(/^```json?\s*/i, "").replace(/```\s*$/i, "").trim();
+    const parsed = JSON.parse(clean) as Record<string, unknown>;
+
+    const str = (v: unknown): string | null =>
+      typeof v === "string" && v.trim() ? v.trim() : null;
+
+    let deadline = str(parsed.deadline);
+    if (deadline && !/^\d{4}-\d{2}-\d{2}$/.test(deadline)) deadline = null;
+
+    return {
+      company_name: str(parsed.company_name),
+      role_title: str(parsed.role_title),
+      location: str(parsed.location),
+      deadline,
+    };
+  } catch {
+    return empty;
+  }
+}
+
 // ── LinkedIn candidate verification ────────────────────────────────────
 
 export type LinkedInMatchFacts = {
