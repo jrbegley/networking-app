@@ -50,6 +50,29 @@ export default async function ApplicationsPage() {
         profileRow as { cover_letter_template_name: string | null } | null
       )?.cover_letter_template_name;
 
+  // cover_letter_name/at also arrive with migration 009. Fetched separately
+  // (rather than added to APP_FIELDS) so an unapplied migration 009 can't
+  // break the primary applications query above — falls back to "no saved
+  // letter" for every row on any read error.
+  const coverLetterByApp = new Map<
+    string,
+    { name: string | null; at: string | null }
+  >();
+  if (applicationIds.length > 0) {
+    const { data: letterRows, error: letterError } = await supabase
+      .from("applications")
+      .select("id, cover_letter_name, cover_letter_at")
+      .in("id", applicationIds);
+    if (!letterError) {
+      for (const r of (letterRows ?? []) as Record<string, unknown>[]) {
+        coverLetterByApp.set(r.id as string, {
+          name: (r.cover_letter_name as string | null) ?? null,
+          at: (r.cover_letter_at as string | null) ?? null,
+        });
+      }
+    }
+  }
+
   // Timeline events for the inline drawers, oldest → newest is handled in the
   // view; fetch all for the loaded applications in one query.
   const eventsByApp = new Map<string, TimelineEvent[]>();
@@ -107,6 +130,8 @@ export default async function ApplicationsPage() {
         ? (contactsByCompany.get(companyId) ?? 0)
         : 0,
       events: eventsByApp.get(r.id as string) ?? [],
+      coverLetterName: coverLetterByApp.get(r.id as string)?.name ?? null,
+      coverLetterAt: coverLetterByApp.get(r.id as string)?.at ?? null,
     };
   });
 
