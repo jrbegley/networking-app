@@ -12,8 +12,10 @@
     "@anthropic-ai/sdk": "^0.100.1",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.107.0",
+    "@xmldom/xmldom": "^0.9.10",
     "next": "^15.3.0",
     "pdfjs-dist": "^6.0.227",
+    "pizzip": "^3.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

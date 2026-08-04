@@ -53,4 +53,40 @@ check(
   { date: "", recipient: [], salutation: "", body: [""] },
 );
 
+import { readFileSync } from "node:fs";
+import { extractParagraphs, templateExampleText, applyContent } from "./src/lib/docx-template";
+import PizZip from "pizzip";
+
+const fixture = new Uint8Array(readFileSync("test-fixtures/template.docx"));
+
+const paras = extractParagraphs(fixture);
+check("extract: paragraph count", paras.length, 9);
+check("extract: salutation text", paras[4].text, "Dear Hiring Manager,");
+
+check("exampleText contains body", /first body paragraph/.test(templateExampleText(fixture)), true);
+
+const cls = { roles: ["letterhead","date","recipient","recipient","salutation","body","body","closing","signature"], bodyStart: 5, bodyEnd: 6 } as const;
+const content = { date: "2026-08-03", recipient: ["Talent Team", "Globex Inc"], salutation: "Dear Globex team,", body: ["New para one.", "New para two.", "New para three."] };
+const out = applyContent(fixture, cls as any, content);
+
+const outZip = new PizZip(out);
+const outDoc = outZip.file("word/document.xml").asText();
+const inZip = new PizZip(fixture);
+
+// margins (sectPr) preserved byte-for-byte
+check("apply: sectPr unchanged", /<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/.test(outDoc), true);
+// header part unchanged
+check("apply: header unchanged", outZip.file("word/header1.xml").asText(), inZip.file("word/header1.xml").asText());
+// new body present
+check("apply: body para one present", outDoc.includes("New para one."), true);
+check("apply: body para three present (cloned)", outDoc.includes("New para three."), true);
+// letterhead + signature preserved
+check("apply: letterhead kept", outDoc.includes("Jane Applicant"), true);
+check("apply: closing kept", outDoc.includes("Sincerely,"), true);
+// salutation replaced
+check("apply: salutation replaced", outDoc.includes("Dear Globex team,"), true);
+check("apply: old salutation gone", outDoc.includes("Dear Hiring Manager,"), false);
+// output re-extracts cleanly: letterhead+date+2 recipient+salutation+3 body+closing+signature = 10
+check("apply: re-extract count", extractParagraphs(out).length, 10);
+
 process.exit(fails ? 1 : 0);
