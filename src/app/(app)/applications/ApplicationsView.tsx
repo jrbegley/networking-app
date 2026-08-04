@@ -19,6 +19,7 @@ import {
   deleteApplication,
 } from "./actions";
 import { AddApplicationDialog } from "./AddApplicationDialog";
+import { CoverLetterPanel } from "./CoverLetterPanel";
 import type { TimelineEvent } from "./page";
 
 export type ApplicationRow = {
@@ -58,8 +59,10 @@ const ACTIVE_STATUSES: ReadonlySet<ApplicationStatus> = new Set([
 
 export function ApplicationsView({
   applications,
+  hasTemplate,
 }: {
   applications: ApplicationRow[];
+  hasTemplate: boolean;
 }) {
   const [filter, setFilter] = useState<Filter>("open");
   const [query, setQuery] = useState("");
@@ -204,6 +207,7 @@ export function ApplicationsView({
                   key={app.id}
                   app={app}
                   expanded={expandedId === app.id}
+                  hasTemplate={hasTemplate}
                   onToggle={() =>
                     setExpandedId((id) => (id === app.id ? null : app.id))
                   }
@@ -283,10 +287,12 @@ function cmpNullableDate(a: string | null, b: string | null): number {
 function ApplicationRowView({
   app,
   expanded,
+  hasTemplate,
   onToggle,
 }: {
   app: ApplicationRow;
   expanded: boolean;
+  hasTemplate: boolean;
   onToggle: () => void;
 }) {
   const [pending, startTransition] = useTransition();
@@ -424,7 +430,7 @@ function ApplicationRowView({
       {expanded && (
         <tr className="bg-slate-50/40">
           <td colSpan={7} className="px-4 pb-5 pt-1">
-            <ApplicationDrawer app={app} />
+            <ApplicationDrawer app={app} hasTemplate={hasTemplate} />
           </td>
         </tr>
       )}
@@ -461,10 +467,17 @@ function StatusSelect({
 
 // ── Drawer: timeline + editable fields ───────────────────────────────────
 
-function ApplicationDrawer({ app }: { app: ApplicationRow }) {
+function ApplicationDrawer({
+  app,
+  hasTemplate,
+}: {
+  app: ApplicationRow;
+  hasTemplate: boolean;
+}) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  const [showCoverLetter, setShowCoverLetter] = useState(false);
 
   function patch(field: string, value: string) {
     setError(null);
@@ -550,6 +563,27 @@ function ApplicationDrawer({ app }: { app: ApplicationRow }) {
             className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
         </div>
+
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={() => setShowCoverLetter((v) => !v)}
+            disabled={!hasTemplate}
+            className="cursor-pointer rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {showCoverLetter ? "Hide cover letter" : "Generate cover letter"}
+          </button>
+          {!hasTemplate && (
+            <p className="mt-1 text-xs text-slate-400">
+              Upload a template in{" "}
+              <Link href="/settings" className="text-indigo-600 hover:underline">
+                Settings
+              </Link>{" "}
+              to enable this.
+            </p>
+          )}
+        </div>
+
         <button
           type="button"
           onClick={handleDelete}
@@ -621,6 +655,17 @@ function ApplicationDrawer({ app }: { app: ApplicationRow }) {
           </ol>
         )}
       </div>
+
+      {/* Cover-letter panel: spans both columns when open. */}
+      {showCoverLetter && hasTemplate && (
+        <div className="lg:col-span-2">
+          <CoverLetterPanel
+            applicationId={app.id}
+            hasTemplate={hasTemplate}
+            onClose={() => setShowCoverLetter(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }

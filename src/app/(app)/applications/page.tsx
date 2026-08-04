@@ -36,6 +36,20 @@ export default async function ApplicationsPage() {
   const rows = (data ?? []) as Record<string, unknown>[];
   const applicationIds = rows.map((r) => r.id as string);
 
+  // cover_letter_template_name arrives with migration 009. Until it's
+  // applied (or on any other read error), fall back to no-template rather
+  // than failing the page.
+  const { data: profileRow, error: profileError } = await supabase
+    .from("profiles")
+    .select("cover_letter_template_name")
+    .eq("id", user.id)
+    .maybeSingle();
+  const hasTemplate = profileError
+    ? false
+    : !!(
+        profileRow as { cover_letter_template_name: string | null } | null
+      )?.cover_letter_template_name;
+
   // Timeline events for the inline drawers, oldest → newest is handled in the
   // view; fetch all for the loaded applications in one query.
   const eventsByApp = new Map<string, TimelineEvent[]>();
@@ -96,7 +110,9 @@ export default async function ApplicationsPage() {
     };
   });
 
-  return <ApplicationsView applications={applications} />;
+  return (
+    <ApplicationsView applications={applications} hasTemplate={hasTemplate} />
+  );
 }
 
 export type TimelineEvent = {
