@@ -7,8 +7,6 @@ import type {
 } from "@xmldom/xmldom";
 import type { LetterClassification, CoverLetterContent } from "./cover-letter-types";
 
-const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-
 function readDocumentXml(docx: Uint8Array): { zip: PizZip; doc: XDocument; body: XElement } {
   const zip = new PizZip(docx);
   const file = zip.file("word/document.xml");

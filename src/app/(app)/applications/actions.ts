@@ -518,15 +518,19 @@ export async function generateCoverLetterForApplication(
 
 /**
  * Apply a chat instruction to the current letter content. Read-only: no DB
- * write, no revalidate. If the job description can no longer be resolved
- * (e.g. the posting page changed), refinement still proceeds with an empty
- * JD rather than blocking the chat — company/role context is enough for
- * most edits.
+ * write, no revalidate. `pastedJd` supplies the job description when the
+ * letter was originally generated from a pasted description (the posting
+ * URL couldn't be fetched), so refinement doesn't silently lose that
+ * context. If the job description can no longer be resolved (e.g. the
+ * posting page changed and no `pastedJd` was given), refinement still
+ * proceeds with an empty JD rather than blocking the chat — company/role
+ * context is enough for most edits.
  */
 export async function refineCoverLetterContent(
   applicationId: string,
   current: CoverLetterContent,
   instruction: string,
+  pastedJd?: string,
 ): Promise<
   { ok: true; content: CoverLetterContent } | { ok: false; reason: string }
 > {
@@ -544,7 +548,7 @@ export async function refineCoverLetterContent(
       ? templateExampleText(template.bytes)
       : "";
 
-    const jd = await resolveJobDescription(row.posting_url);
+    const jd = await resolveJobDescription(row.posting_url, pastedJd);
     const jobDescription = jd.ok ? jd.text : "";
 
     const resumeText = await loadResumeText(supabase, user.id);

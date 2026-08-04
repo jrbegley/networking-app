@@ -40,6 +40,9 @@ export function CoverLetterPanel({
   const [chatInput, setChatInput] = useState("");
   const [pasteMode, setPasteMode] = useState(false);
   const [pastedJd, setPastedJd] = useState("");
+  const [lastPastedJd, setLastPastedJd] = useState<string | undefined>(
+    undefined,
+  );
   const [noTemplate, setNoTemplate] = useState(false);
   const [errorReason, setErrorReason] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -60,6 +63,10 @@ export function CoverLetterPanel({
         setClassification(res.classification);
         setPasteMode(false);
         setMessages([]);
+        // Remember the pasted JD (if any) so chat refinements reuse it
+        // instead of silently degrading to an empty JD. A successful
+        // URL-based (re)generate clears any stale paste from before.
+        setLastPastedJd(jd);
       } else if (res.reason === "needs_paste") {
         setPasteMode(true);
       } else if (res.reason === "no_template") {
@@ -95,6 +102,7 @@ export function CoverLetterPanel({
         applicationId,
         content,
         trimmed,
+        lastPastedJd,
       );
       if (res.ok) {
         setContent(res.content);
