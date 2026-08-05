@@ -54,7 +54,7 @@ check(
 );
 
 import { readFileSync } from "node:fs";
-import { extractParagraphs, templateExampleText, applyContent } from "./src/lib/docx-template";
+import { extractParagraphs, templateExampleText, applyContent, isValidDocx } from "./src/lib/docx-template";
 import PizZip from "pizzip";
 
 const fixture = new Uint8Array(readFileSync("test-fixtures/template.docx"));
@@ -88,5 +88,14 @@ check("apply: salutation replaced", outDoc.includes("Dear Globex team,"), true);
 check("apply: old salutation gone", outDoc.includes("Dear Hiring Manager,"), false);
 // output re-extracts cleanly: letterhead+date+2 recipient+salutation+3 body+closing+signature = 10
 check("apply: re-extract count", extractParagraphs(out).length, 10);
+
+// isValidDocx: real fixture is valid; a mislabeled HTML file and empty bytes are not.
+check("isValidDocx: real .docx", isValidDocx(fixture), true);
+check(
+  "isValidDocx: HTML renamed .docx",
+  isValidDocx(new TextEncoder().encode("<html><head></head><body>hi</body></html>")),
+  false,
+);
+check("isValidDocx: empty", isValidDocx(new Uint8Array(0)), false);
 
 process.exit(fails ? 1 : 0);

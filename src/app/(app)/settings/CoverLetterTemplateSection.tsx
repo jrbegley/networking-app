@@ -29,6 +29,20 @@ export function CoverLetterTemplateSection({ initial }: { initial: Initial }) {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Quick guard before uploading: a real .docx is a zip starting with "PK".
+    // Catches HTML/PDF/old-.doc files renamed to .docx and gives instant
+    // feedback; the server re-validates the full structure after upload.
+    const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+    if (head[0] !== 0x50 || head[1] !== 0x4b) {
+      setStatus({
+        kind: "error",
+        text:
+          "That file isn't a real Word .docx — it looks like an HTML or other file renamed to .docx. In Word use Save As → Word Document (.docx), or in Google Docs use File → Download → Microsoft Word (.docx), then upload that.",
+      });
+      e.target.value = "";
+      return;
+    }
+
     setBusy(true);
     setStatus({ kind: "info", text: `Uploading ${file.name}…` });
 

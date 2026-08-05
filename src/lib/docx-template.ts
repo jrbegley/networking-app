@@ -38,6 +38,21 @@ export function extractParagraphs(docx: Uint8Array): { index: number; text: stri
   return topLevelParagraphs(body).map((p, index) => ({ index, text: paragraphText(p) }));
 }
 
+/**
+ * True only for a genuine OOXML .docx: a zip whose `word/document.xml` parses
+ * and has a `w:body`. Guards against files that carry a `.docx` extension but
+ * aren't real Word documents (HTML "web page" exports, old binary .doc, PDFs),
+ * which otherwise blow up inside pizzip with a cryptic zip error.
+ */
+export function isValidDocx(docx: Uint8Array): boolean {
+  try {
+    readDocumentXml(docx);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function templateExampleText(docx: Uint8Array): string {
   return extractParagraphs(docx).map((p) => p.text).join("\n");
 }

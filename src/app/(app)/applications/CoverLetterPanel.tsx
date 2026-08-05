@@ -20,6 +20,8 @@ type ChatMessage = { role: "user" | "assistant"; text: string };
 const ERROR_COPY: Record<string, string> = {
   unreadable_template:
     "Couldn't read this template as a standard letter — check it's a normal cover letter .docx.",
+  invalid_docx:
+    "Your saved template isn't a real Word .docx (it looks like an HTML or other file renamed to .docx). Open it in Word and use Save As → Word Document (.docx), or in Google Docs use File → Download → Microsoft Word (.docx), then re-upload it in Settings.",
   not_set_up:
     "The cover-letter feature needs its database migration applied. Paste supabase/migrations/009_cover_letters.sql into the Supabase SQL editor and run it, then try again.",
 };

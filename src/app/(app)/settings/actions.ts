@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { isValidDocx } from "@/lib/docx-template";
 import {
   enrichPersonByLinkedInUrl,
   type ApolloPerson,
@@ -201,6 +202,27 @@ export async function recordCoverLetterTemplate(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not signed in.", saved: false };
+
+  // Validate the just-uploaded file really is a Word .docx before recording it.
+  // A file that carries a .docx extension but isn't real OOXML (an HTML "web
+  // page" export, a PDF, an old binary .doc) is rejected here — deleted from
+  // storage so nothing broken lingers — instead of failing later at generate
+  // time with a cryptic zip error.
+  const templatePath = `${user.id}/template.docx`;
+  const { data: file, error: downloadError } = await supabase.storage
+    .from("cover-letter-templates")
+    .download(templatePath);
+  if (downloadError || !file) {
+    return { error: "Upload didn't go through. Please try again.", saved: false };
+  }
+  if (!isValidDocx(new Uint8Array(await file.arrayBuffer()))) {
+    await supabase.storage.from("cover-letter-templates").remove([templatePath]);
+    return {
+      error:
+        "That file isn't a real Word .docx — it looks like an HTML or other file renamed to .docx. Open it in Word and use Save As → Word Document (.docx), or in Google Docs use File → Download → Microsoft Word (.docx), then upload that version.",
+      saved: false,
+    };
+  }
 
   const { error } = await supabase
     .from("profiles")

@@ -25,6 +25,7 @@ import {
   extractParagraphs,
   templateExampleText,
   applyContent,
+  isValidDocx,
 } from "@/lib/docx-template";
 import type {
   CoverLetterContent,
@@ -414,7 +415,9 @@ async function loadTemplateBytes(
     }
     return { ok: false, reason: "no_template" };
   }
-  return { ok: true, bytes: new Uint8Array(await data.arrayBuffer()) };
+  const bytes = new Uint8Array(await data.arrayBuffer());
+  if (!isValidDocx(bytes)) return { ok: false, reason: "invalid_docx" };
+  return { ok: true, bytes };
 }
 
 /**
