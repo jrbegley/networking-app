@@ -167,7 +167,7 @@ export function ApplicationsView({
         </p>
       ) : (
         <div className="mt-4 overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
-          <table className="w-full min-w-[820px] text-left text-sm">
+          <table className="w-full min-w-[880px] table-fixed text-left text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/60 text-xs font-medium text-slate-500">
                 <SortHeader
@@ -178,30 +178,34 @@ export function ApplicationsView({
                 />
                 <SortHeader
                   label="Status"
+                  width="w-40"
                   active={sort.key === "status"}
                   dir={sort.dir}
                   onClick={() => toggleSort("status")}
                 />
                 <SortHeader
                   label="Applied"
+                  width="w-28"
                   active={sort.key === "applied"}
                   dir={sort.dir}
                   onClick={() => toggleSort("applied")}
                 />
-                <th className="px-4 py-2.5 font-medium">Heard back</th>
+                <th className="w-28 px-4 py-2.5 font-medium">Heard back</th>
                 <SortHeader
                   label="Waiting"
+                  width="w-24"
                   active={sort.key === "wait"}
                   dir={sort.dir}
                   onClick={() => toggleSort("wait")}
                 />
                 <SortHeader
                   label="Deadline"
+                  width="w-28"
                   active={sort.key === "deadline"}
                   dir={sort.dir}
                   onClick={() => toggleSort("deadline")}
                 />
-                <th className="px-4 py-2.5" />
+                <th className="w-12 px-4 py-2.5" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -326,8 +330,11 @@ function ApplicationRowView({
           <div className="flex items-start gap-2">
             <Chevron open={expanded} />
             <div className="min-w-0">
-              <p className="font-medium text-slate-900">{app.companyName}</p>
-              <p className="truncate text-xs text-slate-500">
+              <p className="truncate font-medium text-slate-900">{app.companyName}</p>
+              <p
+                className="truncate text-xs text-slate-500"
+                title={`${app.roleTitle}${app.location ? ` · ${app.location}` : ""}`}
+              >
                 {app.roleTitle}
                 {app.location ? ` · ${app.location}` : ""}
               </p>
@@ -761,14 +768,16 @@ function SortHeader({
   active,
   dir,
   onClick,
+  width = "",
 }: {
   label: string;
   active: boolean;
   dir: 1 | -1;
   onClick: () => void;
+  width?: string;
 }) {
   return (
-    <th className="px-4 py-2.5 font-medium">
+    <th className={`px-4 py-2.5 font-medium ${width}`}>
       <button
         type="button"
         onClick={onClick}
