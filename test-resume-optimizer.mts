@@ -174,5 +174,20 @@ check(
   { matched: 2, incorporated: 0, missing: 2, total: 4 },
 );
 
+// ── compileLatex live smoke (LIVE_TESTS=1 only) ─────────────────────────
+if (process.env.LIVE_TESTS === "1") {
+  const { compileLatex } = await import("./src/lib/latex-compile");
+  const res = await compileLatex(source, "pdflatex");
+  check("compileLatex(live): ok", res.ok, true);
+  if (res.ok) {
+    check("compileLatex(live): pdf magic", String.fromCharCode(...res.pdf.slice(0, 4)), "%PDF");
+    check("compileLatex(live): fixture is one page", pdfPageCount(res.pdf), 1);
+  } else {
+    console.log(res.log);
+  }
+  const bad = await compileLatex("\\documentclass{article}\\begin{document}\\undefinedmacro\\end{document}", "pdflatex");
+  check("compileLatex(live): broken source -> log", [bad.ok, !bad.ok && bad.log.length > 0], [false, true]);
+}
+
 console.log(fails === 0 ? "\nAll checks passed." : `\n${fails} check(s) failed.`);
 process.exit(fails === 0 ? 0 : 1);

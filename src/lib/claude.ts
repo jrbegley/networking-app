@@ -10,6 +10,14 @@ import {
   validateClassification,
   validateCoverLetterContent,
 } from "@/lib/cover-letter-types";
+import {
+  type Keyword,
+  type Rewrite,
+  type SegmentCandidate,
+  validateSegmentCandidates,
+  validateKeywords,
+  validateRewrites,
+} from "@/lib/resume-optimizer-types";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -933,5 +941,99 @@ export async function refineCoverLetter(
     return validateCoverLetterContent(JSON.parse(stripFences(textFrom(response))));
   } catch {
     return current; // keep the last good content on failure
+  }
+}
+
+// ── Resume optimizer ───────────────────────────────────────────────────
+// Three calls, each validated by a never-throw validator. The .tex is never
+// rewritten wholesale: Claude proposes exact substrings and per-segment
+// rewrites; src/lib/latex-resume.ts verifies and splices.
+
+/** Exact rewritable substrings of a .tex resume. Never throws (validator). */
+export async function segmentResumeTex(source: string): Promise<SegmentCandidate[]> {
+  const system = `You identify the rewritable description text in a LaTeX resume. Output ONLY JSON, no prose, no markdown.
+Shape: {"segments": [{"id": string, "section": string, "entry": string, "text": string}]}
+Rules:
+- "text" is copied CHARACTER-FOR-CHARACTER from the source, including any LaTeX inside it (\\textbf{...}, \\%, \\$). Do not normalize whitespace, quotes, or dashes. It must be a verbatim substring.
+- Include only the description sentence(s) of experience, project, leadership, research, or volunteering bullets: the content inside \\resumeItem{...}, after \\item, or similar.
+- Exclude section headers, dates, job titles, company names, degree lines, contact info, the skills/technologies list, and macro definitions.
+- One segment per bullet. "section" is the section heading ("Experience"); "entry" is the role/project name it belongs to.
+- ids: "s1", "s2", ... in document order.`;
+  const response = await client.messages.create({
+    model: MODEL, max_tokens: 4000, system,
+    messages: [{ role: "user", content: `LATEX SOURCE:\n${source}` }],
+  });
+  try {
+    return validateSegmentCandidates(JSON.parse(stripFences(textFrom(response))));
+  } catch {
+    return [];
+  }
+}
+
+/** Weighted keywords from a job description. Never throws (validator). */
+export async function extractJobKeywords(
+  jobDescription: string, roleTitle: string,
+): Promise<Omit<Keyword, "present">[]> {
+  const system = `You extract the keywords a resume screener would look for in a job description. Output ONLY JSON, no prose, no markdown.
+Shape: {"keywords": [{"term": string, "category": "skill"|"tool"|"domain"|"soft", "weight": 1|2|3}]}
+- At most 25. weight 3 = central to the role, 2 = clearly wanted, 1 = nice to have.
+- "term" is the short canonical form as it would appear on a resume ("Kubernetes", "REST APIs", "A/B testing"), not a phrase ("experience with Kubernetes").
+- "tool" = named technologies/products; "skill" = techniques/languages/methods; "domain" = industry or subject knowledge; "soft" = collaboration/communication traits.
+- No duplicates, no generic words ("experience", "team").`;
+  const user = `Role: ${roleTitle}\n\nJOB DESCRIPTION:\n${jobDescription.slice(0, 12000)}`;
+  const response = await client.messages.create({
+    model: MODEL, max_tokens: 1200, system, messages: [{ role: "user", content: user }],
+  });
+  try {
+    return validateKeywords(JSON.parse(stripFences(textFrom(response))));
+  } catch {
+    return [];
+  }
+}
+
+export type RewriteContext = {
+  segments: SegmentCandidate[];
+  keywords: Keyword[];
+  resumeText: string | null;
+  jobDescription: string;
+  companyName: string;
+  roleTitle: string;
+  instruction?: string;        // chat refinement, applied on top of currentRewrites
+  currentRewrites?: Rewrite[];
+};
+
+const REWRITE_RULES = `You rephrase resume bullets so they surface the job's keywords, without changing what the candidate actually did. Output ONLY JSON, no prose, no markdown.
+Shape: {"rewrites": [{"id": string, "text": string, "keywords": string[]}]}
+Hard rules, every one is checked by code and a violation discards your rewrite:
+- Rephrase ONLY. Never add a tool, technology, metric, outcome, team size, or claim that the original bullet does not already state or clearly demonstrate.
+- Use a keyword only when the original bullet already demonstrates it (e.g. "Flask" may be named if the bullet says a Flask API was built). Never work in a keyword the candidate has not shown.
+- Keep every number, percentage, dollar amount, and year exactly as written.
+- Keep every LaTeX command that appears in the original; add no new commands, no \\item, \\begin, \\end, \\\\ or blank lines. Keep LaTeX escapes (\\%, \\$, \\&).
+- Stay within 15% of the original's length so the resume keeps its page count.
+- Return only the segments you changed; omit the rest. "keywords" lists the job keywords the rewrite now names.
+- Prefer strong verbs and the job's vocabulary; keep the candidate's voice.`;
+
+/** Rewrite segments against keywords (and an optional chat instruction). Never throws (validator). */
+export async function rewriteResumeSegments(ctx: RewriteContext): Promise<Rewrite[]> {
+  const missing = ctx.keywords.filter((k) => !k.present).map((k) => `${k.term} (${k.category}, w${k.weight})`);
+  const present = ctx.keywords.filter((k) => k.present).map((k) => k.term);
+  const user = [
+    `Company: ${ctx.companyName}`, `Role: ${ctx.roleTitle}`,
+    ``, `JOB KEYWORDS ALREADY ON THE RESUME (surface them where a bullet shows them): ${present.join(", ") || "(none)"}`,
+    `JOB KEYWORDS NOT YET ON THE RESUME (use one only if a bullet already demonstrates it): ${missing.join(", ") || "(none)"}`,
+    ``, `SEGMENTS (JSON):\n${JSON.stringify(ctx.segments)}`,
+    ctx.currentRewrites?.length ? `\nCURRENT REWRITES (JSON, the starting point):\n${JSON.stringify(ctx.currentRewrites)}` : "",
+    ctx.instruction ? `\nTHE USER WANTS THIS CHANGED: ${ctx.instruction}\nApply it on top of the current rewrites and return the FULL set of rewrites that should now be in effect.` : "",
+    ``, `RESUME PLAIN TEXT (for context only):\n${ctx.resumeText ?? "(none)"}`,
+    ``, `JOB DESCRIPTION:\n${ctx.jobDescription.slice(0, 12000) || "(none provided)"}`,
+  ].filter((l) => l !== "").join("\n");
+  const response = await client.messages.create({
+    model: MODEL, max_tokens: 4000, system: REWRITE_RULES,
+    messages: [{ role: "user", content: user }],
+  });
+  try {
+    return validateRewrites(JSON.parse(stripFences(textFrom(response))), ctx.segments.map((s) => s.id));
+  } catch {
+    return ctx.currentRewrites ?? [];
   }
 }
