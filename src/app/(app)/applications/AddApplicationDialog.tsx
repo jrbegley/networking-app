@@ -86,6 +86,12 @@ export function AddApplicationDialog({ hasResumeTex }: { hasResumeTex: boolean }
     resetAutofill();
   }
 
+  // Backdrop / X during the tailoring step would throw away unsaved work.
+  function requestClose() {
+    if (createdId && !confirm("Discard this tailored resume? The application is already added.")) return;
+    handleClose();
+  }
+
   // Apply a read result: on success prefill the fields and remount the form so
   // the new defaults take; on needs_paste swap to the paste box; otherwise show
   // the reason inline and leave the form manually fillable.
@@ -177,7 +183,7 @@ export function AddApplicationDialog({ hasResumeTex }: { hasResumeTex: boolean }
       {open && (
         <div
           className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 backdrop-blur-sm sm:p-8"
-          onClick={handleClose}
+          onClick={requestClose}
         >
           <div
             className={`mt-8 w-full ${createdId ? "max-w-4xl" : "max-w-lg"} rounded-xl bg-white shadow-xl ring-1 ring-slate-200`}
@@ -189,7 +195,7 @@ export function AddApplicationDialog({ hasResumeTex }: { hasResumeTex: boolean }
               </h2>
               <button
                 type="button"
-                onClick={handleClose}
+                onClick={requestClose}
                 className="cursor-pointer rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                 aria-label="Close"
               >

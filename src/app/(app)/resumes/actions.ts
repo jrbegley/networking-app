@@ -9,7 +9,7 @@ import {
   locateSegments, validateRewrite, spliceSegments, plainTextOf, markPresent, pdfPageCount,
 } from "@/lib/latex-resume";
 import {
-  isCompiler,
+  isCompiler, validateKeywords,
   type Change, type Compiler, type OptimizerResult, type Rewrite,
 } from "@/lib/resume-optimizer-types";
 
@@ -90,6 +90,61 @@ function applyRewrites(changes: Change[], rewrites: Rewrite[], keepReverted = fa
   });
 }
 
+/**
+ * The client round-trips the OptimizerResult, so never trust it: rebuild it
+ * from the stored .tex (source of truth). Every segment must still sit
+ * verbatim at its offsets (else the resume changed since the run → null),
+ * rewrites are re-validated, keywords re-derived, and `tex` re-spliced.
+ */
+function reconcileResult(result: OptimizerResult, profile: ResumeProfile): OptimizerResult | null {
+  const source = profile.resume_tex;
+  if (!source || !result || !Array.isArray(result.changes)) return null;
+  const changes: Change[] = [];
+  let prevEnd = 0;
+  const ordered = [...result.changes].sort((a, b) => (a?.segment?.start ?? 0) - (b?.segment?.start ?? 0));
+  for (const c of ordered) {
+    const seg = c?.segment;
+    if (
+      !seg || typeof seg.text !== "string" ||
+      !Number.isInteger(seg.start) || !Number.isInteger(seg.end) ||
+      seg.start < prevEnd || source.slice(seg.start, seg.end) !== seg.text
+    ) return null;
+    prevEnd = seg.end;
+    let rewrite: Rewrite | null = null;
+    let droppedReason: string | null = null;
+    if (c.rewrite && typeof c.rewrite.text === "string") {
+      const v = validateRewrite(seg.text, c.rewrite.text);
+      if (v.ok) {
+        rewrite = {
+          id: String(seg.id),
+          text: c.rewrite.text,
+          keywords: Array.isArray(c.rewrite.keywords)
+            ? c.rewrite.keywords.filter((k): k is string => typeof k === "string")
+            : [],
+        };
+      } else {
+        droppedReason = v.reason;
+      }
+    }
+    changes.push({
+      segment: { id: String(seg.id), section: String(seg.section ?? ""), entry: String(seg.entry ?? ""), text: seg.text, start: seg.start, end: seg.end },
+      rewrite,
+      accepted: c.accepted !== false,
+      droppedReason,
+    });
+  }
+  const compiler: Compiler = isCompiler(profile.resume_tex_compiler) ? profile.resume_tex_compiler : "pdflatex";
+  const keywords = markPresent(validateKeywords({ keywords: result.keywords }), plainTextOf(source));
+  return {
+    originalTex: source,
+    tex: spliceSegments(source, changes),
+    compiler,
+    keywords,
+    changes,
+    pageWarning: !!result.pageWarning,
+  };
+}
+
 /** Splice + compile; compile failure is reported, not thrown, so .tex download still works. */
 async function compileResult(
   result: OptimizerResult, originalPages: number | null,
@@ -167,6 +222,9 @@ export async function refineResumeRewrites(
     if (!userId) return { ok: false, reason: "Not signed in." };
 
     const profile = await loadResumeProfile(supabase, userId);
+    const clean = reconcileResult(result, profile);
+    if (!clean) return { ok: false, reason: "resume_changed" };
+    result = clean;
     const row = await loadApplicationRow(supabase, applicationId);
     const jd = await resolveJobDescription(row.posting_url, pastedJd);
 
@@ -195,7 +253,9 @@ export async function recompileResume(result: OptimizerResult): Promise<Optimize
     const userId = await requireUser(supabase);
     if (!userId) return { ok: false, reason: "Not signed in." };
     const profile = await loadResumeProfile(supabase, userId);
-    return { ok: true, ...(await compileResult(result, profile.resume_tex_pages)) };
+    const clean = reconcileResult(result, profile);
+    if (!clean) return { ok: false, reason: "resume_changed" };
+    return { ok: true, ...(await compileResult(clean, profile.resume_tex_pages)) };
   } catch (e) {
     return { ok: false, reason: errorReason(e) };
   }
@@ -211,6 +271,16 @@ export async function saveTailoredResume(
     const supabase = await createClient();
     const userId = await requireUser(supabase);
     if (!userId) return { ok: false, reason: "Not signed in." };
+
+    const profile = await loadResumeProfile(supabase, userId);
+    const clean = reconcileResult(result, profile);
+    if (!clean) return { ok: false, reason: "resume_changed" };
+    result = clean;
+
+    const bytes = Buffer.from(pdfBase64, "base64");
+    if (bytes.length < 8 || bytes.length > 10 * 1024 * 1024 || bytes.subarray(0, 4).toString("latin1") !== "%PDF") {
+      return { ok: false, reason: "That doesn't look like a compiled PDF — regenerate and try again." };
+    }
 
     const row = await loadApplicationRow(supabase, applicationId);
     const { data: inserted, error } = await supabase
@@ -231,7 +301,6 @@ export async function saveTailoredResume(
     if (error) throw error;
     const id = (inserted as { id: string }).id;
 
-    const bytes = Buffer.from(pdfBase64, "base64");
     const { error: uploadError } = await supabase.storage
       .from("tailored-resumes")
       .upload(`${userId}/${id}.pdf`, bytes, { upsert: true, contentType: "application/pdf" });

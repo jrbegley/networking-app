@@ -190,7 +190,7 @@ export function ResumesView({ rows, applications, hasResumeTex }: { rows: Tailor
       )}
 
       {tailoring && (
-        <Modal title="Tailor resume" wide onClose={() => setTailoring(null)}>
+        <Modal title="Tailor resume" wide onClose={() => { if (confirm("Discard this tailored resume?")) setTailoring(null); }}>
           <ResumeOptimizerPanel
             applicationId={tailoring.id}
             companyName={tailoring.companyName}

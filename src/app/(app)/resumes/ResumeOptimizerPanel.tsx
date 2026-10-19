@@ -15,6 +15,7 @@ import { coverage } from "@/lib/latex-resume";
 type ChatMessage = { role: "user" | "assistant"; text: string };
 
 const ERROR_COPY: Record<string, string> = {
+  resume_changed: "Your LaTeX resume changed in Settings since this run. Click Regenerate to tailor the new version.",
   no_segments: "Couldn't find rewritable bullets in this resume. Check that your experience/project bullets are plain \\item or \\resumeItem{...} text.",
   not_set_up: "The resume optimizer needs its database migration applied. Paste supabase/migrations/010_resume_optimizer.sql into the Supabase SQL editor and run it, then try again.",
 };
@@ -142,6 +143,17 @@ export function ResumeOptimizerPanel({
   const [pending, startTransition] = useTransition();
   const startedRef = useRef(false);
   const recompileTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Bumped whenever a newer action supersedes an in-flight recompile, so a
+  // late response can't overwrite newer toggles. `dirty` = toggled but the
+  // PDF/.tex on screen haven't caught up yet.
+  const seqRef = useRef(0);
+  const [dirty, setDirty] = useState(false);
+
+  function supersedeRecompile() {
+    seqRef.current++;
+    if (recompileTimer.current) clearTimeout(recompileTimer.current);
+    setDirty(false);
+  }
 
   function applyResult(res: OptimizeResult) {
     if (res.ok) {
@@ -159,6 +171,7 @@ export function ResumeOptimizerPanel({
   }
 
   function runOptimize(jd?: string) {
+    supersedeRecompile();
     setErrorReason(null);
     setNoResumeTex(false);
     setPasteMode(false);
@@ -188,15 +201,30 @@ export function ResumeOptimizerPanel({
     };
     setResult(next);
     setSaved(false);
+    setDirty(true);
+    const seq = ++seqRef.current;
     if (recompileTimer.current) clearTimeout(recompileTimer.current);
     recompileTimer.current = setTimeout(() => {
-      startTransition(async () => applyResult(await recompileResume(next)));
+      startTransition(async () => {
+        const res = await recompileResume(next);
+        if (seq !== seqRef.current) return; // a newer toggle or chat edit superseded this
+        if (res.ok) {
+          // Merge only the derived fields; the user's current toggles stay.
+          setResult((prev) => (prev ? { ...prev, tex: res.result.tex, pageWarning: res.result.pageWarning } : prev));
+          setPdfBase64(res.pdfBase64);
+          setCompileLog(res.compileLog);
+        } else {
+          applyResult(res);
+        }
+        setDirty(false);
+      });
     }, 600);
   }
 
   function handleSend() {
     const trimmed = chatInput.trim();
     if (!trimmed || !result) return;
+    supersedeRecompile();
     setMessages((m) => [...m, { role: "user", text: trimmed }]);
     setChatInput("");
     setErrorReason(null);
@@ -338,16 +366,16 @@ export function ResumeOptimizerPanel({
           </div>
 
           <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3">
-            <button type="button" onClick={handleDownloadPdf} disabled={pending || !pdfBase64} className="cursor-pointer rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" onClick={handleDownloadPdf} disabled={pending || dirty || !pdfBase64} className="cursor-pointer rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">
               Download PDF
             </button>
-            <button type="button" onClick={handleDownloadTex} disabled={pending} className="cursor-pointer rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50">
+            <button type="button" onClick={handleDownloadTex} disabled={pending || dirty} className="cursor-pointer rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50">
               Download .tex
             </button>
-            <button type="button" onClick={handleSave} disabled={pending || !pdfBase64 || saved} className="cursor-pointer rounded-md border border-indigo-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 shadow-sm hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" onClick={handleSave} disabled={pending || dirty || !pdfBase64 || saved} className="cursor-pointer rounded-md border border-indigo-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 shadow-sm hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50">
               {saved ? "✓ Saved to Resumes" : "Save to Resumes"}
             </button>
-            {pending && <span className="text-xs text-slate-400">Working…</span>}
+            {(pending || dirty) && <span className="text-xs text-slate-400">Working…</span>}
             {errorReason && result && <span className="text-sm text-red-600">{ERROR_COPY[errorReason] ?? errorReason}</span>}
           </div>
         </div>
