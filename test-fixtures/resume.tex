@@ -1,0 +1,53 @@
+\documentclass[letterpaper,11pt]{article}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\pagestyle{empty}
+\titleformat{\section}{\scshape\large\raggedright}{}{0em}{}[\titlerule]
+
+\newcommand{\resumeItem}[1]{\item\small{#1 \vspace{-2pt}}}
+\newcommand{\resumeSubheading}[4]{
+  \item
+  \begin{tabular*}{\textwidth}[t]{l@{\extracolsep{\fill}}r}
+    \textbf{#1} & #2 \\
+    \textit{\small#3} & \textit{\small #4} \\
+  \end{tabular*}\vspace{-7pt}
+}
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+\begin{document}
+
+\begin{center}
+  \textbf{\Huge \scshape Jordan Example} \\ \vspace{1pt}
+  \small 555-010-0199 $|$ \href{mailto:jordan@example.com}{jordan@example.com}
+\end{center}
+
+\section{Experience}
+\resumeSubHeadingListStart
+  \resumeSubheading{Software Engineering Intern}{Jun 2025 -- Aug 2025}{Acme Corp}{Chicago, IL}
+  \resumeItemListStart
+    \resumeItem{Built a REST API in Python and Flask that served 1,200 requests per minute with 99.9\% uptime}
+    \resumeItem{Wrote unit tests with pytest, raising coverage from 40\% to 85\%}
+    \resumeItem{Collaborated with 3 teammates using Git and Jira}
+  \resumeItemListEnd
+  \resumeSubheading{Teaching Assistant}{Jan 2025 -- May 2025}{State University}{Columbus, OH}
+  \resumeItemListStart
+    \resumeItem{Collaborated with 3 teammates using Git and Jira}
+  \resumeItemListEnd
+\resumeSubHeadingListEnd
+
+\section{Projects}
+\begin{itemize}[leftmargin=0.15in]
+  \item \textbf{Budget Tracker} -- Designed a PostgreSQL schema and a Node.js backend for tracking \$2,000 of monthly spending
+  \item \textbf{Weather CLI} -- Parsed JSON from a public API in C++ and cached results locally
+\end{itemize}
+
+\section{Skills}
+\textbf{Languages}: Python, C++, JavaScript, SQL \\
+\textbf{Tools}: Git, Docker, Node.js, PostgreSQL
+
+\end{document}
