@@ -3,6 +3,8 @@ import { SettingsForm } from "./SettingsForm";
 import { OutlookSection } from "./OutlookSection";
 import { CadenceSection } from "./CadenceSection";
 import { CoverLetterTemplateSection } from "./CoverLetterTemplateSection";
+import { ResumeTexSection } from "./ResumeTexSection";
+import { isCompiler } from "@/lib/resume-optimizer-types";
 import type { CadenceRule } from "@/lib/cadence";
 
 export default async function SettingsPage({
@@ -62,6 +64,21 @@ export default async function SettingsPage({
     .order("created_at", { ascending: true });
   const cadenceRules = (ruleRows ?? []) as CadenceRule[];
 
+  // resume_tex_* arrive with migration 010. Queried separately so the page
+  // still renders (with a "not set up" note) before it's applied.
+  const { data: texRow, error: texError } = await supabase
+    .from("profiles")
+    .select("resume_tex_name, resume_tex_at, resume_tex_compiler, resume_tex_pages")
+    .eq("id", user?.id ?? "")
+    .maybeSingle();
+  const texNotSetUp = !!texError && /resume_tex/i.test(texError.message);
+  const tex = (texRow ?? null) as {
+    resume_tex_name: string | null;
+    resume_tex_at: string | null;
+    resume_tex_compiler: string | null;
+    resume_tex_pages: number | null;
+  } | null;
+
   return (
     <div className="max-w-3xl space-y-10">
       <div>
@@ -105,6 +122,17 @@ export default async function SettingsPage({
         initial={{
           templateName: profile?.cover_letter_template_name ?? null,
           templateUploadedAt: profile?.cover_letter_template_at ?? null,
+        }}
+      />
+
+      {/* LaTeX resume for the optimizer */}
+      <ResumeTexSection
+        initial={{
+          name: tex?.resume_tex_name ?? null,
+          savedAt: tex?.resume_tex_at ?? null,
+          compiler: isCompiler(tex?.resume_tex_compiler) ? tex.resume_tex_compiler : "pdflatex",
+          pages: tex?.resume_tex_pages ?? null,
+          notSetUp: texNotSetUp,
         }}
       />
     </div>
