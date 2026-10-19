@@ -4,13 +4,6 @@ import { summarizeTavilyPayload } from "@/lib/tavily-summary";
 import { summarizeLinkedInPayload } from "@/lib/linkedin-summary";
 import type { ApolloSearchFilters } from "@/lib/apollo";
 import {
-  type LetterClassification,
-  type CoverLetterContent,
-  type CoverLetterContext,
-  validateClassification,
-  validateCoverLetterContent,
-} from "@/lib/cover-letter-types";
-import {
   type Keyword,
   type Rewrite,
   type SegmentCandidate,
@@ -855,7 +848,7 @@ A wrong match pollutes a CRM and leads to embarrassing misdirected outreach. Whe
   return null;
 }
 
-// ── Cover-letter generation ────────────────────────────────────────────
+// ── Shared response helpers ────────────────────────────────────────────
 
 function textFrom(response: Anthropic.Message): string {
   return response.content
@@ -864,84 +857,6 @@ function textFrom(response: Anthropic.Message): string {
 }
 function stripFences(t: string): string {
   return t.replace(/^```json?\s*/i, "").replace(/```\s*$/i, "").trim();
-}
-
-/** Classify each body paragraph by role. Never throws (validator gives a safe default). */
-export async function classifyLetterParagraphs(
-  paragraphs: { index: number; text: string }[],
-): Promise<LetterClassification> {
-  if (!paragraphs.length) return validateClassification(null, 0);
-  const system = `You label the paragraphs of a cover letter by role. Output ONLY JSON, no prose, no markdown.
-Shape: {"roles": string[], "bodyStart": number, "bodyEnd": number}
-- roles has exactly one entry per input paragraph, in order, each one of:
-  "letterhead","date","recipient","salutation","body","closing","signature".
-- "date" = the letter's date line. "recipient" = the addressee block (name/company/address lines).
-  "salutation" = the greeting ("Dear ..."). "body" = the substantive paragraphs.
-  "closing" = the sign-off word ("Sincerely,"). "signature" = the sender's name/contact after the closing.
-  "letterhead" = anything above the date (sender name/contact at the top) or anything you are unsure about.
-- bodyStart/bodyEnd = the inclusive index range of the contiguous "body" paragraphs.
-When unsure, prefer "letterhead" so the paragraph is left untouched.`;
-  const user = JSON.stringify(paragraphs.map((p) => ({ index: p.index, text: p.text })));
-  const response = await client.messages.create({
-    model: MODEL, max_tokens: 500, system, messages: [{ role: "user", content: user }],
-  });
-  try {
-    return validateClassification(JSON.parse(stripFences(textFrom(response))), paragraphs.length);
-  } catch {
-    return validateClassification(null, paragraphs.length);
-  }
-}
-
-const COVER_LETTER_RULES = `You write a job-application cover letter as structured JSON. Output ONLY JSON, no prose, no markdown.
-Shape: {"date": string, "recipient": string[], "salutation": string, "body": string[]}
-- Match the tone, length, and paragraph count of the EXAMPLE LETTER as closely as you can; it shows the writer's voice.
-- "date" is today's date in the same style the example uses.
-- "recipient" is the addressee block for THIS company (1+ short lines). If you don't know the hiring manager, address the team/department, never invent a person's name.
-- "salutation" greets the recipient.
-- "body" are the substantive paragraphs (an array, one string per paragraph). Ground every claim about the applicant ONLY in the RESUME. Never invent experience. Tie the letter to the JOB DESCRIPTION specifics.
-- No markdown, no bullet characters, plain sentences.`;
-
-export async function generateCoverLetter(ctx: CoverLetterContext): Promise<CoverLetterContent> {
-  const user = [
-    `Today's date: ${ctx.today}`,
-    `Company: ${ctx.companyName}`, `Role: ${ctx.roleTitle}`,
-    ctx.location ? `Location: ${ctx.location}` : "",
-    ``, `EXAMPLE LETTER (match its voice and structure):\n${ctx.templateText}`,
-    ``, `RESUME (the only source of applicant facts):\n${ctx.resumeText ?? "(none provided)"}`,
-    ``, `JOB DESCRIPTION:\n${ctx.jobDescription || "(none provided)"}`,
-  ].filter(Boolean).join("\n");
-  const response = await client.messages.create({
-    model: MODEL, max_tokens: 1200, system: COVER_LETTER_RULES,
-    messages: [{ role: "user", content: user }],
-  });
-  try {
-    return validateCoverLetterContent(JSON.parse(stripFences(textFrom(response))));
-  } catch {
-    return validateCoverLetterContent(null);
-  }
-}
-
-export async function refineCoverLetter(
-  current: CoverLetterContent, instruction: string, ctx: CoverLetterContext,
-): Promise<CoverLetterContent> {
-  const user = [
-    `Today's date: ${ctx.today}`,
-    `Company: ${ctx.companyName}`, `Role: ${ctx.roleTitle}`,
-    ``, `CURRENT LETTER (JSON):\n${JSON.stringify(current)}`,
-    ``, `RESUME (only source of applicant facts):\n${ctx.resumeText ?? "(none provided)"}`,
-    ``, `JOB DESCRIPTION:\n${ctx.jobDescription || "(none provided)"}`,
-    ``, `THE USER WANTS THIS CHANGED: ${instruction}`,
-    ``, `Apply the instruction and return the FULL revised letter in the same JSON shape. Keep everything the instruction does not ask you to change. Same sourcing discipline: applicant facts only from the resume.`,
-  ].join("\n");
-  const response = await client.messages.create({
-    model: MODEL, max_tokens: 1200, system: COVER_LETTER_RULES,
-    messages: [{ role: "user", content: user }],
-  });
-  try {
-    return validateCoverLetterContent(JSON.parse(stripFences(textFrom(response))));
-  } catch {
-    return current; // keep the last good content on failure
-  }
 }
 
 // ── Resume optimizer ───────────────────────────────────────────────────

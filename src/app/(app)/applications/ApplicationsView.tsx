@@ -17,10 +17,8 @@ import {
   updateApplication,
   addApplicationEvent,
   deleteApplication,
-  coverLetterDownloadUrl,
 } from "./actions";
 import { AddApplicationDialog } from "./AddApplicationDialog";
-import { CoverLetterPanel } from "./CoverLetterPanel";
 import type { TimelineEvent } from "./page";
 
 export type ApplicationRow = {
@@ -39,8 +37,6 @@ export type ApplicationRow = {
   notes: string | null;
   contactsAtCompany: number;
   events: TimelineEvent[];
-  coverLetterName: string | null;
-  coverLetterAt: string | null;
 };
 
 type Filter = "open" | "active" | "closed" | "all";
@@ -62,11 +58,9 @@ const ACTIVE_STATUSES: ReadonlySet<ApplicationStatus> = new Set([
 
 export function ApplicationsView({
   applications,
-  hasTemplate,
   hasResumeTex,
 }: {
   applications: ApplicationRow[];
-  hasTemplate: boolean;
   hasResumeTex: boolean;
 }) {
   const [filter, setFilter] = useState<Filter>("open");
@@ -216,7 +210,6 @@ export function ApplicationsView({
                   key={app.id}
                   app={app}
                   expanded={expandedId === app.id}
-                  hasTemplate={hasTemplate}
                   onToggle={() =>
                     setExpandedId((id) => (id === app.id ? null : app.id))
                   }
@@ -296,12 +289,10 @@ function cmpNullableDate(a: string | null, b: string | null): number {
 function ApplicationRowView({
   app,
   expanded,
-  hasTemplate,
   onToggle,
 }: {
   app: ApplicationRow;
   expanded: boolean;
-  hasTemplate: boolean;
   onToggle: () => void;
 }) {
   const [pending, startTransition] = useTransition();
@@ -364,9 +355,6 @@ function ApplicationRowView({
                     {app.contactsAtCompany} contact
                     {app.contactsAtCompany === 1 ? "" : "s"}
                   </Link>
-                )}
-                {app.coverLetterName && (
-                  <CoverLetterChip applicationId={app.id} />
                 )}
               </div>
             </div>
@@ -445,7 +433,7 @@ function ApplicationRowView({
       {expanded && (
         <tr className="bg-slate-50/40">
           <td colSpan={7} className="px-4 pb-5 pt-1">
-            <ApplicationDrawer app={app} hasTemplate={hasTemplate} />
+            <ApplicationDrawer app={app} />
           </td>
         </tr>
       )}
@@ -482,17 +470,10 @@ function StatusSelect({
 
 // ── Drawer: timeline + editable fields ───────────────────────────────────
 
-function ApplicationDrawer({
-  app,
-  hasTemplate,
-}: {
-  app: ApplicationRow;
-  hasTemplate: boolean;
-}) {
+function ApplicationDrawer({ app }: { app: ApplicationRow }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState("");
-  const [showCoverLetter, setShowCoverLetter] = useState(false);
 
   function patch(field: string, value: string) {
     setError(null);
@@ -579,26 +560,6 @@ function ApplicationDrawer({
           />
         </div>
 
-        <div className="mt-4">
-          <button
-            type="button"
-            onClick={() => setShowCoverLetter((v) => !v)}
-            disabled={!hasTemplate}
-            className="cursor-pointer rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {showCoverLetter ? "Hide cover letter" : "Generate cover letter"}
-          </button>
-          {!hasTemplate && (
-            <p className="mt-1 text-xs text-slate-400">
-              Upload a template in{" "}
-              <Link href="/settings" className="text-indigo-600 hover:underline">
-                Settings
-              </Link>{" "}
-              to enable this.
-            </p>
-          )}
-        </div>
-
         <button
           type="button"
           onClick={handleDelete}
@@ -670,17 +631,6 @@ function ApplicationDrawer({
           </ol>
         )}
       </div>
-
-      {/* Cover-letter panel: spans both columns when open. */}
-      {showCoverLetter && hasTemplate && (
-        <div className="lg:col-span-2">
-          <CoverLetterPanel
-            applicationId={app.id}
-            hasTemplate={hasTemplate}
-            onClose={() => setShowCoverLetter(false)}
-          />
-        </div>
-      )}
     </div>
   );
 }
@@ -825,61 +775,6 @@ function LinkIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
         d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"
-      />
-    </svg>
-  );
-}
-
-function CoverLetterChip({ applicationId }: { applicationId: string }) {
-  const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-
-  function handleClick() {
-    setError(null);
-    startTransition(async () => {
-      const r = await coverLetterDownloadUrl(applicationId);
-      if (r.ok) {
-        window.open(r.url, "_blank");
-      } else {
-        setError(r.reason);
-      }
-    });
-  }
-
-  return (
-    <span className="inline-flex items-center gap-1">
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          handleClick();
-        }}
-        disabled={pending}
-        title="Download saved cover letter"
-        className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-indigo-200 transition-colors duration-150 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <DocumentIcon />
-        Cover letter
-      </button>
-      {error && <span className="text-xs text-red-600">{error}</span>}
-    </span>
-  );
-}
-
-function DocumentIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      className="h-3.5 w-3.5"
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
       />
     </svg>
   );
