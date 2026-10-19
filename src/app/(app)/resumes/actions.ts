@@ -68,12 +68,20 @@ async function loadApplicationRow(supabase: Supabase, applicationId: string): Pr
   return data as ApplicationRow;
 }
 
-/** Validate each proposed rewrite against its segment; failures keep the original. */
-function applyRewrites(changes: Change[], rewrites: Rewrite[]): Change[] {
+/**
+ * Validate each proposed rewrite against its segment; failures keep the
+ * original. With `keepReverted` (chat refinement), a bullet the user reverted
+ * stays reverted unless the model returned a fresh rewrite for it, so a chat
+ * edit doesn't silently undo earlier Revert clicks.
+ */
+function applyRewrites(changes: Change[], rewrites: Rewrite[], keepReverted = false): Change[] {
   const byId = new Map(rewrites.map((r) => [r.id, r]));
   return changes.map((c) => {
     const r = byId.get(c.segment.id);
-    if (!r) return { ...c, rewrite: null, accepted: true, droppedReason: null };
+    if (!r) {
+      if (keepReverted && c.rewrite && !c.accepted) return c;
+      return { ...c, rewrite: null, accepted: true, droppedReason: null };
+    }
     if (r.text === c.segment.text) return { ...c, rewrite: null, accepted: true, droppedReason: null };
     const v = validateRewrite(c.segment.text, r.text);
     return v.ok
@@ -173,7 +181,7 @@ export async function refineResumeRewrites(
       companyName: row.company_name, roleTitle: row.role_title,
       instruction, currentRewrites,
     });
-    const changes = applyRewrites(result.changes, rewrites);
+    const changes = applyRewrites(result.changes, rewrites, true);
     return { ok: true, ...(await compileResult({ ...result, changes }, profile.resume_tex_pages)) };
   } catch (e) {
     return { ok: false, reason: errorReason(e) };

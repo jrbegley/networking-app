@@ -151,6 +151,10 @@ check(
   [true, true, false, false, false],
 );
 
+// Trailing prose commas aren't part of a number (regression: "used 3, 4").
+check("validateRewrite: comma after number may change", validateRewrite("Used 3, 4 and 5 tools daily", "Used 3 and 4 plus 5 tools daily").ok, true);
+check("validateRewrite: thousands separator still enforced", validateRewrite("Served 1,200 users", "Served 1200 users").ok, false);
+
 // ── pdfPageCount ────────────────────────────────────────────────────────
 const onePage = "%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n3 0 obj << /Type /Page /Parent 2 0 R >> endobj\n%%EOF";
 const twoPage = "%PDF-1.4\n2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >> endobj\n3 0 obj << /Type/Page /Parent 2 0 R >> endobj\n4 0 obj << /Type /Page /Parent 2 0 R >> endobj\n%%EOF";

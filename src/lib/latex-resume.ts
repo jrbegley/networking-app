@@ -24,7 +24,7 @@ export function locateSegments(source: string, candidates: SegmentCandidate[]): 
 export const LENGTH_TOLERANCE = 0.15;
 
 const COMMAND_RE = /\\[a-zA-Z@]+/g;
-const NUMBER_RE = /\$?\d[\d,]*(?:\.\d+)?%?/g;
+const NUMBER_RE = /\$?\d+(?:,\d{3})*(?:\.\d+)?%?/g;
 // Structural tokens a rephrase must never introduce.
 const STRUCTURE_RES: RegExp[] = [/\\item\b/g, /\\begin\b/g, /\\end\b/g, /\\section\b/g, /\\subsection\b/g, /\\\\/g];
 
