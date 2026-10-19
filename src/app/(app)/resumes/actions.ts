@@ -269,3 +269,17 @@ export async function tailoredResumePdfUrl(id: string): Promise<{ ok: true; url:
     return { ok: false, reason: errorReason(e) };
   }
 }
+
+/** The saved .tex for a tailored resume (download button on the Resumes tab). */
+export async function tailoredResumeTex(id: string): Promise<{ ok: true; tex: string } | { ok: false; reason: string }> {
+  try {
+    const supabase = await createClient();
+    const userId = await requireUser(supabase);
+    if (!userId) return { ok: false, reason: "Not signed in." };
+    const { data, error } = await supabase.from("tailored_resumes").select("tex").eq("id", id).single();
+    if (error) throw error;
+    return { ok: true, tex: (data as { tex: string }).tex };
+  } catch (e) {
+    return { ok: false, reason: errorReason(e) };
+  }
+}
