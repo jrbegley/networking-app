@@ -8,6 +8,9 @@ import {
   type ApolloPerson,
 } from "@/lib/apollo";
 import { disconnectOutlook } from "@/lib/graph";
+import { compileLatex } from "@/lib/latex-compile";
+import { pdfPageCount } from "@/lib/latex-resume";
+import { isCompiler } from "@/lib/resume-optimizer-types";
 
 export type ProfileFormState = {
   error: string | null;
@@ -473,4 +476,96 @@ export async function disconnectOutlookAction(): Promise<DisconnectOutlookResult
 
   revalidatePath("/settings");
   return { error: null };
+}
+
+// ── LaTeX resume (resume optimizer) ────────────────────────────────────
+
+export type ResumeTexState = { error: string | null; saved: boolean; pages?: number };
+
+const RESUME_TEX_MAX_CHARS = 200_000;
+const NOT_SET_UP_MSG =
+  "The resume optimizer needs its database migration applied. Paste supabase/migrations/010_resume_optimizer.sql into the Supabase SQL editor and run it, then try again.";
+
+function resumeTexNotSetUp(message: string): boolean {
+  return /resume_tex/i.test(message) && /column|schema cache|does not exist|could not find/i.test(message);
+}
+
+/**
+ * Store the user's LaTeX resume after a successful test compile, so a
+ * template the compile service can't build is rejected up front with the log
+ * tail instead of failing mid-flow later. Also records the page count the
+ * optimizer compares tailored output against.
+ */
+export async function saveResumeTex(
+  source: string,
+  name: string,
+  compiler: string,
+): Promise<ResumeTexState> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in.", saved: false };
+
+  const tex = source.replace(/\r\n/g, "\n");
+  if (!tex.trim()) return { error: "The .tex source is empty.", saved: false };
+  if (tex.length > RESUME_TEX_MAX_CHARS) return { error: "That .tex is too large (200 KB max).", saved: false };
+  if (!/\\documentclass/.test(tex) || !/\\begin\{document\}/.test(tex)) {
+    return { error: "That doesn't look like a complete LaTeX document (needs \\documentclass and \\begin{document}).", saved: false };
+  }
+  if (!isCompiler(compiler)) return { error: "Pick pdflatex, xelatex, or lualatex.", saved: false };
+
+  const compiled = await compileLatex(tex, compiler);
+  if (!compiled.ok) {
+    return { error: `Test compile failed:\n${compiled.log}`, saved: false };
+  }
+  const pages = pdfPageCount(compiled.pdf);
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      resume_tex: tex,
+      resume_tex_name: name.trim() || "resume.tex",
+      resume_tex_at: new Date().toISOString(),
+      resume_tex_compiler: compiler,
+      resume_tex_pages: pages,
+    })
+    .eq("id", user.id);
+  if (error) return { error: resumeTexNotSetUp(error.message) ? NOT_SET_UP_MSG : error.message, saved: false };
+
+  revalidatePath("/settings");
+  revalidatePath("/applications");
+  revalidatePath("/resumes");
+  return { error: null, saved: true, pages };
+}
+
+export async function clearResumeTex(): Promise<ResumeTexState> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in.", saved: false };
+  const { error } = await supabase
+    .from("profiles")
+    .update({ resume_tex: null, resume_tex_name: null, resume_tex_at: null, resume_tex_pages: null })
+    .eq("id", user.id);
+  if (error) return { error: resumeTexNotSetUp(error.message) ? NOT_SET_UP_MSG : error.message, saved: false };
+  revalidatePath("/settings");
+  revalidatePath("/applications");
+  revalidatePath("/resumes");
+  return { error: null, saved: true };
+}
+
+/** The stored .tex, for the Settings download button. */
+export async function resumeTexSource(): Promise<{ source: string | null; name: string | null; error: string | null }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { source: null, name: null, error: "Not signed in." };
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("resume_tex, resume_tex_name")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (error) return { source: null, name: null, error: resumeTexNotSetUp(error.message) ? NOT_SET_UP_MSG : error.message };
+  return {
+    source: (data?.resume_tex as string | null) ?? null,
+    name: (data?.resume_tex_name as string | null) ?? null,
+    error: null,
+  };
 }

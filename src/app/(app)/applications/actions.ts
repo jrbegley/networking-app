@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { resolveJobDescription } from "@/lib/job-description";
 import {
   APPLICATION_STATUSES,
   type ApplicationStatus,
@@ -33,7 +34,7 @@ import type {
   CoverLetterContext,
 } from "@/lib/cover-letter-types";
 
-export type ActionResult = { error: string | null };
+export type ActionResult = { error: string | null; id?: string };
 
 /**
  * Result of reading a posting from a URL or pasted text. Read-only: neither
@@ -143,7 +144,7 @@ export async function createApplication(
   }
 
   revalidatePath("/applications");
-  return { error: null };
+  return { error: null, id: inserted?.id as string | undefined };
 }
 
 /**
@@ -418,30 +419,6 @@ async function loadTemplateBytes(
   const bytes = new Uint8Array(await data.arrayBuffer());
   if (!isValidDocx(bytes)) return { ok: false, reason: "invalid_docx" };
   return { ok: true, bytes };
-}
-
-/**
- * Resolve the job description text for an application: the pasted text if
- * given, else fetched from posting_url via the same guard/fetch/clean chain
- * as the Add Application autofill. Any fetch failure or missing URL routes
- * to the paste fallback rather than failing the whole action.
- */
-async function resolveJobDescription(
-  postingUrl: string | null,
-  pastedJd?: string,
-): Promise<{ ok: true; text: string } | { ok: false; reason: "needs_paste" }> {
-  if (pastedJd && pastedJd.trim()) return { ok: true, text: pastedJd.trim() };
-  if (!postingUrl) return { ok: false, reason: "needs_paste" };
-  const guard = guardUrl(postingUrl);
-  if (!guard.ok) return { ok: false, reason: "needs_paste" };
-  try {
-    const html = await fetchPostingHtml(guard.url);
-    const text = htmlToText(html);
-    if (!text) return { ok: false, reason: "needs_paste" };
-    return { ok: true, text };
-  } catch {
-    return { ok: false, reason: "needs_paste" };
-  }
 }
 
 async function loadApplicationRow(
