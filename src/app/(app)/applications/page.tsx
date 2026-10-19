@@ -50,6 +50,15 @@ export default async function ApplicationsPage() {
         profileRow as { cover_letter_template_name: string | null } | null
       )?.cover_letter_template_name;
 
+  // resume_tex_name arrives with migration 010. Separate query so an
+  // unapplied migration can't break the page; falls back to "no .tex".
+  const { data: texRow, error: texError } = await supabase
+    .from("profiles")
+    .select("resume_tex_name")
+    .eq("id", user.id)
+    .maybeSingle();
+  const hasResumeTex = texError ? false : !!(texRow as { resume_tex_name: string | null } | null)?.resume_tex_name;
+
   // cover_letter_name/at also arrive with migration 009. Fetched separately
   // (rather than added to APP_FIELDS) so an unapplied migration 009 can't
   // break the primary applications query above — falls back to "no saved
@@ -136,7 +145,7 @@ export default async function ApplicationsPage() {
   });
 
   return (
-    <ApplicationsView applications={applications} hasTemplate={hasTemplate} />
+    <ApplicationsView applications={applications} hasTemplate={hasTemplate} hasResumeTex={hasResumeTex} />
   );
 }
 

@@ -63,9 +63,11 @@ const ACTIVE_STATUSES: ReadonlySet<ApplicationStatus> = new Set([
 export function ApplicationsView({
   applications,
   hasTemplate,
+  hasResumeTex,
 }: {
   applications: ApplicationRow[];
   hasTemplate: boolean;
+  hasResumeTex: boolean;
 }) {
   const [filter, setFilter] = useState<Filter>("open");
   const [query, setQuery] = useState("");
@@ -115,7 +117,7 @@ export function ApplicationsView({
             {applications.length === 1 ? "" : "s"} tracked
           </p>
         </div>
-        <AddApplicationDialog />
+        <AddApplicationDialog hasResumeTex={hasResumeTex} />
       </div>
 
       {/* Summary strip */}

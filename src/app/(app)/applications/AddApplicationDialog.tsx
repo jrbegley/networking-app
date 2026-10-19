@@ -18,6 +18,7 @@ import {
   APPLICATION_STATUSES,
   STATUS_LABEL,
 } from "@/lib/applications";
+import { ResumeOptimizerPanel } from "../resumes/ResumeOptimizerPanel";
 
 type Prefill = {
   company_name: string;
@@ -43,7 +44,7 @@ const CREATE_STATUSES = APPLICATION_STATUSES.filter(
   (s) => !["rejected", "withdrawn", "ghosted"].includes(s),
 );
 
-export function AddApplicationDialog() {
+export function AddApplicationDialog({ hasResumeTex }: { hasResumeTex: boolean }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(
     createApplication,
@@ -63,6 +64,12 @@ export function AddApplicationDialog() {
   const [filled, setFilled] = useState(false);
   const [reading, startReading] = useTransition();
 
+  // Resume-tailoring handoff. `handoff` is captured at submit time (the form
+  // remounts/reset afterwards) and `createdId` flips the dialog to step 2.
+  const [tailor, setTailor] = useState(true);
+  const [handoff, setHandoff] = useState<{ company: string; role: string; jd?: string } | null>(null);
+  const [createdId, setCreatedId] = useState<string | null>(null);
+
   function resetAutofill() {
     setUrl("");
     setPrefill(EMPTY_PREFILL);
@@ -74,6 +81,8 @@ export function AddApplicationDialog() {
 
   function handleClose() {
     setOpen(false);
+    setCreatedId(null);
+    setHandoff(null);
     resetAutofill();
   }
 
@@ -127,15 +136,21 @@ export function AddApplicationDialog() {
     });
   }
 
-  // Close + reset on a successful submit (no error after a pending cycle).
+  // After a successful submit: either hand off to the resume optimizer
+  // (box checked, .tex on file, id returned) or close + reset as before.
   useEffect(() => {
     if (wasPending.current && !pending && !state.error) {
-      setOpen(false);
       formRef.current?.reset();
-      resetAutofill();
+      if (hasResumeTex && tailor && state.id && handoff) {
+        setCreatedId(state.id);
+      } else {
+        setOpen(false);
+        resetAutofill();
+      }
     }
     wasPending.current = pending;
-  }, [pending, state.error]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, state.error, state.id]);
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -165,12 +180,12 @@ export function AddApplicationDialog() {
           onClick={handleClose}
         >
           <div
-            className="mt-8 w-full max-w-lg rounded-xl bg-white shadow-xl ring-1 ring-slate-200"
+            className={`mt-8 w-full ${createdId ? "max-w-4xl" : "max-w-lg"} rounded-xl bg-white shadow-xl ring-1 ring-slate-200`}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
               <h2 className="text-base font-semibold text-slate-900">
-                Add application
+                {createdId ? "Tailor resume" : "Add application"}
               </h2>
               <button
                 type="button"
@@ -190,6 +205,18 @@ export function AddApplicationDialog() {
               </button>
             </div>
 
+            {createdId && handoff ? (
+              <div className="px-6 py-5">
+                <ResumeOptimizerPanel
+                  applicationId={createdId}
+                  companyName={handoff.company}
+                  roleTitle={handoff.role}
+                  pastedJd={handoff.jd}
+                  onDone={() => handleClose()}
+                />
+              </div>
+            ) : (
+              <>
             {/*
               Autofill panel — OUTSIDE the <form> so the URL/paste text are
               never submitted as fields and survive the form remount that
@@ -285,6 +312,14 @@ export function AddApplicationDialog() {
               ref={formRef}
               key={formKey}
               action={formAction}
+              onSubmit={(e) => {
+                const fd = new FormData(e.currentTarget);
+                setHandoff({
+                  company: String(fd.get("company_name") ?? ""),
+                  role: String(fd.get("role_title") ?? ""),
+                  jd: pasteMode && pasteText.trim() ? pasteText.trim() : undefined,
+                });
+              }}
               className="space-y-4 px-6 py-5"
             >
               {/* URL carried into createApplication; set from the box above. */}
@@ -400,6 +435,19 @@ export function AddApplicationDialog() {
                 />
               </div>
 
+              {hasResumeTex && (
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={tailor}
+                    onChange={(e) => setTailor(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  Tailor my resume for this role
+                  <span className="text-xs text-slate-400">(opens after saving)</span>
+                </label>
+              )}
+
               <div className="flex items-center justify-end gap-3 pt-1">
                 <button
                   type="button"
@@ -417,6 +465,8 @@ export function AddApplicationDialog() {
                 </button>
               </div>
             </form>
+              </>
+            )}
           </div>
         </div>
       )}
