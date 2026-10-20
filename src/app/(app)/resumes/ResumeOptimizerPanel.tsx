@@ -11,6 +11,7 @@ import {
 } from "./actions";
 import type { Change, Keyword, OptimizerResult } from "@/lib/resume-optimizer-types";
 import { coverage } from "@/lib/latex-resume";
+import { ResumeCompareModal } from "./ResumeCompareModal";
 
 type ChatMessage = { role: "user" | "assistant"; text: string };
 
@@ -140,6 +141,7 @@ export function ResumeOptimizerPanel({
   const [noResumeTex, setNoResumeTex] = useState(false);
   const [errorReason, setErrorReason] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [comparing, setComparing] = useState(false);
   const [pending, startTransition] = useTransition();
   const startedRef = useRef(false);
   const recompileTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -372,12 +374,18 @@ export function ResumeOptimizerPanel({
             <button type="button" onClick={handleDownloadTex} disabled={pending || dirty} className="cursor-pointer rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50">
               Download .tex
             </button>
+            <button type="button" onClick={() => setComparing(true)} disabled={pending || dirty || !result} className="cursor-pointer rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50">
+              Compare
+            </button>
             <button type="button" onClick={handleSave} disabled={pending || dirty || !pdfBase64 || saved} className="cursor-pointer rounded-md border border-indigo-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 shadow-sm hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50">
               {saved ? "✓ Saved to Resumes" : "Save to Resumes"}
             </button>
             {(pending || dirty) && <span className="text-xs text-slate-400">Working…</span>}
             {errorReason && result && <span className="text-sm text-red-600">{ERROR_COPY[errorReason] ?? errorReason}</span>}
           </div>
+          {comparing && (
+            <ResumeCompareModal input={{ result }} title={`${companyName} · ${roleTitle}`} onClose={() => setComparing(false)} />
+          )}
         </div>
       )}
     </div>

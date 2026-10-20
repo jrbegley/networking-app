@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { deleteTailoredResume, tailoredResumePdfUrl, tailoredResumeTex } from "./actions";
+import { ResumeCompareModal } from "./ResumeCompareModal";
 import { ResumeOptimizerPanel, KeywordChips, ChangeCards } from "./ResumeOptimizerPanel";
 import { coverage } from "@/lib/latex-resume";
 import type { Change, Keyword } from "@/lib/resume-optimizer-types";
@@ -41,6 +42,7 @@ function Modal({ title, wide, onClose, children }: { title: string; wide?: boole
 export function ResumesView({ rows, applications, hasResumeTex }: { rows: TailoredResumeRow[]; applications: PickerApplication[]; hasResumeTex: boolean }) {
   const router = useRouter();
   const [viewing, setViewing] = useState<TailoredResumeRow | null>(null);
+  const [comparing, setComparing] = useState<TailoredResumeRow | null>(null);
   const [picking, setPicking] = useState(false);
   const [tailoring, setTailoring] = useState<PickerApplication | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -139,6 +141,7 @@ export function ResumesView({ rows, applications, hasResumeTex }: { rows: Tailor
                         <button type="button" onClick={() => openPdf(r.id)} disabled={pending} className="cursor-pointer text-indigo-600 hover:underline disabled:opacity-50">PDF</button>
                         <button type="button" onClick={() => downloadTex(r)} className="cursor-pointer text-indigo-600 hover:underline">.tex</button>
                         <button type="button" onClick={() => setViewing(r)} className="cursor-pointer text-slate-600 hover:underline">View</button>
+                        <button type="button" onClick={() => setComparing(r)} className="cursor-pointer text-slate-600 hover:underline">Compare</button>
                         <button type="button" onClick={() => remove(r)} disabled={pending} className="cursor-pointer text-red-600 hover:underline disabled:opacity-50">Delete</button>
                       </div>
                     </td>
@@ -159,6 +162,15 @@ export function ResumesView({ rows, applications, hasResumeTex }: { rows: Tailor
             </div>
           </div>
         </Modal>
+      )}
+
+      {comparing && (
+        <ResumeCompareModal
+          key={comparing.id}
+          input={{ tailoredResumeId: comparing.id }}
+          title={`${comparing.companyName} · ${comparing.roleTitle}`}
+          onClose={() => setComparing(null)}
+        />
       )}
 
       {picking && !tailoring && (

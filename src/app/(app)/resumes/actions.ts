@@ -7,6 +7,7 @@ import { segmentResumeTex, extractJobKeywords, rewriteResumeSegments } from "@/l
 import { compileLatex } from "@/lib/latex-compile";
 import {
   locateSegments, validateRewrite, spliceSegments, plainTextOf, markPresent, pdfPageCount,
+  reconstructOriginal, reviewSources,
 } from "@/lib/latex-resume";
 import {
   isCompiler, validateKeywords,
@@ -356,6 +357,56 @@ export async function tailoredResumeTex(id: string): Promise<{ ok: true; tex: st
     const { data, error } = await supabase.from("tailored_resumes").select("tex").eq("id", id).single();
     if (error) throw error;
     return { ok: true, tex: (data as { tex: string }).tex };
+  } catch (e) {
+    return { ok: false, reason: errorReason(e) };
+  }
+}
+
+export type CompareInput = { result: OptimizerResult } | { tailoredResumeId: string };
+export type CompareResult =
+  | { ok: true; originalPdfBase64: string; tailoredPdfBase64: string }
+  | { ok: false; reason: string; log?: string };
+
+/** View-only PDFs for the side-by-side comparer: changed text coloured red (before) / green (after). Nothing is saved. */
+export async function compareResumes(input: CompareInput): Promise<CompareResult> {
+  try {
+    const supabase = await createClient();
+    const userId = await requireUser(supabase);
+    if (!userId) return { ok: false, reason: "Not signed in." };
+    let sources: { original: string; tailored: string };
+    let compiler: Compiler;
+    if ("result" in input) {
+      const profile = await loadResumeProfile(supabase, userId);
+      const clean = reconcileResult(input.result, profile);
+      if (!clean) return { ok: false, reason: "resume_changed" };
+      sources = reviewSources(clean.originalTex, clean.changes);
+      compiler = clean.compiler;
+    } else {
+      const { data, error } = await supabase
+        .from("tailored_resumes")
+        .select("tex, changes, compiler")
+        .eq("id", input.tailoredResumeId)
+        .single();
+      if (error) throw error;
+      const row = data as { tex: string; changes: unknown; compiler: string | null };
+      if (!Array.isArray(row.changes)) return { ok: false, reason: "cannot_compare" };
+      const changes = row.changes as Change[];
+      const original = reconstructOriginal(row.tex, changes);
+      if (original == null) return { ok: false, reason: "cannot_compare" };
+      sources = reviewSources(original, changes);
+      compiler = isCompiler(row.compiler) ? row.compiler : "pdflatex";
+    }
+    const [a, b] = await Promise.all([
+      compileLatex(sources.original, compiler),
+      compileLatex(sources.tailored, compiler),
+    ]);
+    if (!a.ok) return { ok: false, reason: "compile_failed", log: a.log };
+    if (!b.ok) return { ok: false, reason: "compile_failed", log: b.log };
+    return {
+      ok: true,
+      originalPdfBase64: Buffer.from(a.pdf).toString("base64"),
+      tailoredPdfBase64: Buffer.from(b.pdf).toString("base64"),
+    };
   } catch (e) {
     return { ok: false, reason: errorReason(e) };
   }
