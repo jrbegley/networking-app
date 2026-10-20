@@ -16,6 +16,12 @@ import {
   markPresent,
   pdfPageCount,
   coverage,
+  changedOriginalRanges,
+  tailoredRanges,
+  reconstructOriginal,
+  highlightRanges,
+  withHighlightColors,
+  reviewSources,
 } from "./src/lib/latex-resume";
 
 let fails = 0;
@@ -178,6 +184,44 @@ check(
   { matched: 2, incorporated: 0, missing: 2, total: 4 },
 );
 
+// ── review highlighting ─────────────────────────────────────────────────
+const liveChanges = changes.filter((c) => c.rewrite);
+check("reconstructOriginal: reverses the splice", reconstructOriginal(spliced, changes), source);
+check("reconstructOriginal: tampered tex -> null", reconstructOriginal(spliced.replace("Developed a Python/Flask", "Developed a Python/Flas"), changes), null);
+check("reconstructOriginal: no accepted changes -> same text", reconstructOriginal(source, changes.map((c) => ({ ...c, accepted: false }))), source);
+check(
+  "changedOriginalRanges: sorted segment offsets of rewrites",
+  changedOriginalRanges(changes),
+  liveChanges.map((c) => ({ start: c.segment.start, end: c.segment.end })).sort((a, b) => a.start - b.start),
+);
+const tRanges = tailoredRanges(changes);
+check(
+  "tailoredRanges: slices spliced tex back to each rewrite",
+  tRanges.map((r) => spliced.slice(r.start, r.end)),
+  liveChanges.slice().sort((a, b) => a.segment.start - b.segment.start).map((c) => c.rewrite!.text),
+);
+const hl = highlightRanges(spliced, tRanges, "tailorNew");
+check("highlightRanges: one colour group per range", hl.split("{\\color{tailorNew}").length - 1, tRanges.length);
+check("highlightRanges: braces balanced", (hl.match(/(?<!\\)\{/g) ?? []).length === (hl.match(/(?<!\\)\}/g) ?? []).length, true);
+check(
+  "highlightRanges: text outside ranges unchanged",
+  hl.replaceAll("{\\color{tailorNew}", "").length - spliced.length,
+  tRanges.length, // each range adds exactly one closing brace
+);
+check("highlightRanges: no ranges -> unchanged", highlightRanges(spliced, [], "tailorNew"), spliced);
+const colored = withHighlightColors(source);
+check("withHighlightColors: inserts once before \\begin{document}", [colored.split("\\definecolor{tailorOld}").length - 1, colored.indexOf("\\definecolor{tailorOld}") < colored.indexOf("\\begin{document}")], [1, true]);
+check("withHighlightColors: defines both colours + xcolor", [colored.includes("\\usepackage{xcolor}"), colored.includes("\\definecolor{tailorNew}{HTML}{15803D}"), colored.includes("\\definecolor{tailorOld}{HTML}{B91C1C}")], [true, true, true]);
+check("withHighlightColors: idempotent", withHighlightColors(colored), colored);
+check("withHighlightColors: no \\begin{document} -> unchanged", withHighlightColors("\\documentclass{article}"), "\\documentclass{article}");
+const review = reviewSources(source, changes);
+check("reviewSources: old and new colours land", [review.original.includes("{\\color{tailorOld}"), review.tailored.includes("{\\color{tailorNew}")], [true, true]);
+check("reviewSources: original not coloured new / tailored not coloured old", [review.original.includes("{\\color{tailorNew}"), review.tailored.includes("{\\color{tailorOld}")], [false, false]);
+const reviewNone = reviewSources(source, changes.map((c) => ({ ...c, accepted: false })));
+check("reviewSources: reverted changes highlight nothing", [reviewNone.original.includes("{\\color{"), reviewNone.tailored.includes("{\\color{")], [false, false]);
+const dvips = source.replace("\\usepackage{titlesec}", "\\usepackage{titlesec}\n\\usepackage[dvipsnames]{xcolor}");
+check("withHighlightColors: template with xcolor options still gets definecolor", [dvips.includes("[dvipsnames]{xcolor}"), withHighlightColors(dvips).includes("\\definecolor{tailorOld}")], [true, true]);
+
 // ── compileLatex live smoke (LIVE_TESTS=1 only) ─────────────────────────
 if (process.env.LIVE_TESTS === "1") {
   const { compileLatex } = await import("./src/lib/latex-compile");
@@ -188,6 +232,15 @@ if (process.env.LIVE_TESTS === "1") {
     check("compileLatex(live): fixture is one page", pdfPageCount(res.pdf), 1);
   } else {
     console.log(res.log);
+  }
+  const shift = dvips.length - source.length; // the added xcolor line precedes every segment
+  const dvipsChanges = changes.map((c) => ({ ...c, segment: { ...c.segment, start: c.segment.start + shift, end: c.segment.end + shift } }));
+  const rv = reviewSources(source, changes);
+  for (const [name, tex] of [["original", rv.original], ["tailored", rv.tailored], ["xcolor options", reviewSources(dvips, dvipsChanges).tailored]] as const) {
+    const r = await compileLatex(tex, "pdflatex");
+    check(`compileLatex(live): review ${name} ok`, r.ok, true);
+    if (r.ok) check(`compileLatex(live): review ${name} pdf magic`, String.fromCharCode(...r.pdf.slice(0, 4)), "%PDF");
+    else console.log(r.log);
   }
   const bad = await compileLatex("\\documentclass{article}\\begin{document}\\undefinedmacro\\end{document}", "pdflatex");
   check("compileLatex(live): broken source -> log", [bad.ok, !bad.ok && bad.log.length > 0], [false, true]);

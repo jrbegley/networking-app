@@ -79,6 +79,74 @@ export function spliceSegments(source: string, changes: Change[]): string {
   return out;
 }
 
+export type Range = { start: number; end: number };
+export const HIGHLIGHT_OLD = "tailorOld";
+export const HIGHLIGHT_NEW = "tailorNew";
+
+function acceptedByStart(changes: Change[]): Change[] {
+  return changes.filter((c) => c.accepted && c.rewrite).sort((a, b) => a.segment.start - b.segment.start);
+}
+
+/** Ranges in the ORIGINAL source of every accepted rewrite, sorted. */
+export function changedOriginalRanges(changes: Change[]): Range[] {
+  return acceptedByStart(changes).map((c) => ({ start: c.segment.start, end: c.segment.end }));
+}
+
+/** Ranges in the spliced (tailored) tex where each accepted rewrite sits. */
+export function tailoredRanges(changes: Change[]): Range[] {
+  let delta = 0;
+  return acceptedByStart(changes).map((c) => {
+    const start = c.segment.start + delta;
+    const end = start + c.rewrite!.text.length;
+    delta += c.rewrite!.text.length - c.segment.text.length;
+    return { start, end };
+  });
+}
+
+/** Reverse spliceSegments; null if the saved tex doesn't line up with the changes. */
+export function reconstructOriginal(tailoredTex: string, changes: Change[]): string | null {
+  const live = acceptedByStart(changes);
+  const ranges = tailoredRanges(changes);
+  let out = tailoredTex;
+  for (let i = live.length - 1; i >= 0; i--) {
+    const { start, end } = ranges[i];
+    if (out.slice(start, end) !== live[i].rewrite!.text) return null;
+    out = out.slice(0, start) + live[i].segment.text + out.slice(end);
+  }
+  return out;
+}
+
+/** Wrap each range in a colour group, highest start first. Ranges must not overlap. */
+export function highlightRanges(source: string, ranges: Range[], color: string): string {
+  let out = source;
+  for (const r of [...ranges].sort((a, b) => b.start - a.start)) {
+    out = out.slice(0, r.start) + "{\\color{" + color + "}" + out.slice(r.start, r.end) + "}" + out.slice(r.end);
+  }
+  return out;
+}
+
+/** Define the highlight colours before the first \begin{document}; idempotent. */
+export function withHighlightColors(source: string): string {
+  if (source.includes("\\definecolor{" + HIGHLIGHT_OLD + "}")) return source;
+  const at = source.indexOf("\\begin{document}");
+  if (at < 0) return source;
+  const defs =
+    "\\usepackage{xcolor}\n" +
+    "\\definecolor{" + HIGHLIGHT_OLD + "}{HTML}{B91C1C}\n" +
+    "\\definecolor{" + HIGHLIGHT_NEW + "}{HTML}{15803D}\n";
+  return source.slice(0, at) + defs + source.slice(at);
+}
+
+/** View-only sources for the side-by-side comparer: changed text red on the left, green on the right. */
+export function reviewSources(originalTex: string, changes: Change[]): { original: string; tailored: string } {
+  return {
+    original: withHighlightColors(highlightRanges(originalTex, changedOriginalRanges(changes), HIGHLIGHT_OLD)),
+    tailored: withHighlightColors(
+      highlightRanges(spliceSegments(originalTex, changes), tailoredRanges(changes), HIGHLIGHT_NEW),
+    ),
+  };
+}
+
 /** Rough plain text of a .tex: comments, commands, braces and math gone; escapes resolved. */
 export function plainTextOf(source: string): string {
   return source
