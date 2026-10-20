@@ -374,7 +374,7 @@ export function ResumeOptimizerPanel({
             <button type="button" onClick={handleDownloadTex} disabled={pending || dirty} className="cursor-pointer rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50">
               Download .tex
             </button>
-            <button type="button" onClick={() => setComparing(true)} disabled={pending || dirty || !result} className="cursor-pointer rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50">
+            <button type="button" onClick={() => setComparing(true)} disabled={pending || dirty || !result || !result.changes.some((c) => c.accepted && c.rewrite)} title={result && !result.changes.some((c) => c.accepted && c.rewrite) ? "No accepted changes to compare" : undefined} className="cursor-pointer rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50">
               Compare
             </button>
             <button type="button" onClick={handleSave} disabled={pending || dirty || !pdfBase64 || saved} className="cursor-pointer rounded-md border border-indigo-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 shadow-sm hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50">

@@ -22,23 +22,36 @@ type Loaded =
 export function ResumeCompareModal({ input, title, onClose }: { input: CompareInput; title: string; onClose: () => void }) {
   const [state, setState] = useState<Loaded>({ status: "loading" });
   const startedRef = useRef(false);
+  const mountedRef = useRef(false);
   const urlsRef = useRef<string[]>([]);
+
+  // Tracks mount separately from startedRef so a response that lands after
+  // the modal closed doesn't create blob URLs nobody will revoke.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      urlsRef.current.forEach((u) => URL.revokeObjectURL(u));
+      urlsRef.current = [];
+    };
+  }, []);
 
   useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
     compareResumes(input).then((res) => {
+      if (!mountedRef.current) return;
       if (!res.ok) { setState({ status: "error", reason: res.reason, log: res.log }); return; }
       const original = pdfUrl(res.originalPdfBase64);
       const tailored = pdfUrl(res.tailoredPdfBase64);
       urlsRef.current = [original, tailored];
       setState({ status: "ready", original, tailored });
-    }).catch((e) => setState({ status: "error", reason: e instanceof Error ? e.message : String(e) }));
+    }).catch((e) => {
+      if (mountedRef.current) setState({ status: "error", reason: e instanceof Error ? e.message : String(e) });
+    });
     // input is captured once on mount by design
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => () => { urlsRef.current.forEach((u) => URL.revokeObjectURL(u)); }, []);
 
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 backdrop-blur-sm sm:p-8" onClick={onClose}>
@@ -66,12 +79,14 @@ export function ResumeCompareModal({ input, title, onClose }: { input: CompareIn
                 <div>
                   <h3 className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
                     <span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-700" />Original
+                    <PdfFallback href={state.original} filename="original-highlighted.pdf" />
                   </h3>
                   <iframe src={state.original} title="Original resume" className="h-[75vh] w-full rounded ring-1 ring-slate-200" />
                 </div>
                 <div>
                   <h3 className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
                     <span className="inline-block h-2.5 w-2.5 rounded-sm bg-green-700" />Tailored
+                    <PdfFallback href={state.tailored} filename="tailored-highlighted.pdf" />
                   </h3>
                   <iframe src={state.tailored} title="Tailored resume" className="h-[75vh] w-full rounded ring-1 ring-slate-200" />
                 </div>
@@ -81,5 +96,14 @@ export function ResumeCompareModal({ input, title, onClose }: { input: CompareIn
         </div>
       </div>
     </div>
+  );
+}
+
+/** For browsers that can't show PDFs inline (some mobile browsers). */
+function PdfFallback({ href, filename }: { href: string; filename: string }) {
+  return (
+    <a href={href} download={filename} className="ml-auto font-medium normal-case tracking-normal text-indigo-600 hover:underline">
+      Download
+    </a>
   );
 }

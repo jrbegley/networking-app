@@ -141,7 +141,9 @@ export function ResumesView({ rows, applications, hasResumeTex }: { rows: Tailor
                         <button type="button" onClick={() => openPdf(r.id)} disabled={pending} className="cursor-pointer text-indigo-600 hover:underline disabled:opacity-50">PDF</button>
                         <button type="button" onClick={() => downloadTex(r)} className="cursor-pointer text-indigo-600 hover:underline">.tex</button>
                         <button type="button" onClick={() => setViewing(r)} className="cursor-pointer text-slate-600 hover:underline">View</button>
-                        <button type="button" onClick={() => setComparing(r)} className="cursor-pointer text-slate-600 hover:underline">Compare</button>
+                        {r.changes.some((c) => c.accepted && c.rewrite) && (
+                          <button type="button" onClick={() => setComparing(r)} className="cursor-pointer text-slate-600 hover:underline">Compare</button>
+                        )}
                         <button type="button" onClick={() => remove(r)} disabled={pending} className="cursor-pointer text-red-600 hover:underline disabled:opacity-50">Delete</button>
                       </div>
                     </td>
