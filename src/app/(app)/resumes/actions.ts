@@ -16,7 +16,7 @@ import {
 
 // ── Result shapes ──────────────────────────────────────────────────────
 export type OptimizeResult =
-  | { ok: true; result: OptimizerResult; pdfBase64: string | null; compileLog: string | null }
+  | { ok: true; result: OptimizerResult; pdfBase64: string | null; compileLog: string | null; note?: string | null }
   | { ok: false; reason: string; log?: string };
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
@@ -84,7 +84,7 @@ function applyRewrites(changes: Change[], rewrites: Rewrite[], keepReverted = fa
       return { ...c, rewrite: null, accepted: true, droppedReason: null };
     }
     if (r.text === c.segment.text) return { ...c, rewrite: null, accepted: true, droppedReason: null };
-    const v = validateRewrite(c.segment.text, r.text);
+    const v = validateRewrite(c.segment.text, r.text, c.segment.kind);
     return v.ok
       ? { ...c, rewrite: r, accepted: true, droppedReason: null }
       : { ...c, rewrite: null, accepted: true, droppedReason: v.reason };
@@ -114,7 +114,7 @@ function reconcileResult(result: OptimizerResult, profile: ResumeProfile): Optim
     let rewrite: Rewrite | null = null;
     let droppedReason: string | null = null;
     if (c.rewrite && typeof c.rewrite.text === "string") {
-      const v = validateRewrite(seg.text, c.rewrite.text);
+      const v = validateRewrite(seg.text, c.rewrite.text, seg.kind === "list" ? "list" : "bullet");
       if (v.ok) {
         rewrite = {
           id: String(seg.id),
@@ -128,7 +128,10 @@ function reconcileResult(result: OptimizerResult, profile: ResumeProfile): Optim
       }
     }
     changes.push({
-      segment: { id: String(seg.id), section: String(seg.section ?? ""), entry: String(seg.entry ?? ""), text: seg.text, start: seg.start, end: seg.end },
+      segment: {
+        id: String(seg.id), section: String(seg.section ?? ""), entry: String(seg.entry ?? ""), text: seg.text,
+        start: seg.start, end: seg.end, ...(seg.kind === "list" ? { kind: "list" as const } : {}),
+      },
       rewrite,
       accepted: c.accepted !== false,
       droppedReason,
@@ -199,9 +202,11 @@ export async function optimizeResumeForApplication(
       segments, keywords, resumeText: profile.resume_text, jobDescription: jd.text,
       companyName: row.company_name, roleTitle: row.role_title,
     });
+    // List lines (skills, coursework, …) change only when the user asks in chat.
+    const listIds = new Set(segments.filter((s) => s.kind === "list").map((s) => s.id));
     const changes = applyRewrites(
       segments.map((segment) => ({ segment, rewrite: null, accepted: true, droppedReason: null })),
-      rewrites,
+      (rewrites?.rewrites ?? []).filter((r) => !listIds.has(r.id)),
     );
     const base: OptimizerResult = { originalTex: source, tex: source, compiler, keywords, changes, pageWarning: false };
     return { ok: true, ...(await compileResult(base, profile.resume_tex_pages)) };
@@ -240,8 +245,9 @@ export async function refineResumeRewrites(
       companyName: row.company_name, roleTitle: row.role_title,
       instruction, currentRewrites,
     });
-    const changes = applyRewrites(result.changes, rewrites, true);
-    return { ok: true, ...(await compileResult({ ...result, changes }, profile.resume_tex_pages)) };
+    if (!rewrites) return { ok: false, reason: "refine_unparsed" };
+    const changes = applyRewrites(result.changes, rewrites.rewrites, true);
+    return { ok: true, note: rewrites.note, ...(await compileResult({ ...result, changes }, profile.resume_tex_pages)) };
   } catch (e) {
     return { ok: false, reason: errorReason(e) };
   }

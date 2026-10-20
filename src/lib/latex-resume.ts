@@ -1,6 +1,6 @@
 // Pure LaTeX-resume helpers for the optimizer: no network, DB, or LLM.
 // The LLM proposes; everything here verifies and applies mechanically.
-import type { Change, Keyword, Segment, SegmentCandidate } from "./resume-optimizer-types";
+import type { Change, Keyword, Segment, SegmentCandidate, SegmentKind } from "./resume-optimizer-types";
 
 /**
  * Keep only candidates whose text occurs exactly once, verbatim, in the
@@ -48,6 +48,7 @@ function bracesBalanced(s: string): boolean {
 export function validateRewrite(
   original: string,
   rewritten: string,
+  kind: SegmentKind = "bullet",
 ): { ok: true } | { ok: false; reason: string } {
   if (!rewritten.trim()) return { ok: false, reason: "empty" };
   if (/\n\s*\n/.test(rewritten)) return { ok: false, reason: "blank_line" };
@@ -62,6 +63,8 @@ export function validateRewrite(
   for (const n of original.match(NUMBER_RE) ?? []) {
     if (!rewritten.includes(n)) return { ok: false, reason: "dropped_number" };
   }
+  // A list line grows when the user asks for items to be added; the page-count check still guards overflow.
+  if (kind === "list") return { ok: true };
   const delta = Math.abs(rewritten.length - original.length) / Math.max(1, original.length);
   if (delta > LENGTH_TOLERANCE) return { ok: false, reason: "length" };
   return { ok: true };

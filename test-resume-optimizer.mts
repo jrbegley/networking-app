@@ -40,6 +40,9 @@ check("isCompiler: rejects latexmk", isCompiler("latexmk"), false);
 // ── validators never throw ─────────────────────────────────────────────
 check("validateSegmentCandidates: garbage -> []", validateSegmentCandidates("x"), []);
 check("validateSegmentCandidates: null -> []", validateSegmentCandidates(null), []);
+check("validateSegmentCandidates: list kind kept, unknown kind dropped",
+  validateSegmentCandidates({ segments: [{ id: "s1", section: "Skills", entry: "Languages", text: "Python, SQL", kind: "list" }, { id: "s2", text: "Built X", kind: "bogus" }] }).map((c) => c.kind),
+  ["list", undefined]);
 check(
   "validateSegmentCandidates: coerces + dedupes ids, drops empty text",
   validateSegmentCandidates({
@@ -98,6 +101,10 @@ check("validateRewrite: dropped number", validateRewrite(orig, "Developed a Pyth
 check("validateRewrite: unbalanced braces", validateRewrite(orig, "Built a \\textbf{REST API in Python and Flask that served 1,200 requests per minute with 99.9\\% uptime").ok, false);
 check("validateRewrite: new command", validateRewrite(orig, "Built a \\textbf{REST API} in Python and Flask that served 1,200 requests per minute with 99.9\\% uptime").ok, false);
 check("validateRewrite: blank line", validateRewrite(orig, "Built a REST API in Python\n\nand Flask that served 1,200 requests per minute with 99.9\\% uptime").ok, false);
+check("validateRewrite: list line may grow", validateRewrite("Python, SQL", "Python, SQL, Power BI, Tableau, Alteryx", "list"), { ok: true });
+check("validateRewrite: bullet may not grow", validateRewrite("Python, SQL", "Python, SQL, Power BI, Tableau, Alteryx").ok, false);
+check("validateRewrite: list line still rejects new commands", validateRewrite("Python, SQL", "Python, \\textbf{SQL}", "list").ok, false);
+check("validateRewrite: list line rename", validateRewrite("Analysis of Data, Statistics", "Data Analysis, Statistics", "list"), { ok: true });
 check("validateRewrite: added \\item", validateRewrite(orig, "\\item Built a REST API in Python and Flask that served 1,200 requests per minute with 99.9\\% uptime").ok, false);
 check("validateRewrite: too long", validateRewrite(orig, orig + " and additionally wrote extensive documentation for every endpoint, module, and deployment step").ok, false);
 check("validateRewrite: too short", validateRewrite(orig, "Built API, 1,200 rpm, 99.9\\%").ok, false);

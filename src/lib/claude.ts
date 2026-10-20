@@ -858,6 +858,12 @@ function textFrom(response: Anthropic.Message): string {
 function stripFences(t: string): string {
   return t.replace(/^```json?\s*/i, "").replace(/```\s*$/i, "").trim();
 }
+/** The outermost {...} in a reply, tolerating prose or fences around it. */
+function jsonObjectFrom(t: string): string {
+  const start = t.indexOf("{");
+  const end = t.lastIndexOf("}");
+  return start >= 0 && end > start ? t.slice(start, end + 1) : t;
+}
 
 // ── Resume optimizer ───────────────────────────────────────────────────
 // Three calls, each validated by a never-throw validator. The .tex is never
@@ -867,12 +873,13 @@ function stripFences(t: string): string {
 /** Exact rewritable substrings of a .tex resume. Never throws (validator). */
 export async function segmentResumeTex(source: string): Promise<SegmentCandidate[]> {
   const system = `You identify the rewritable description text in a LaTeX resume. Output ONLY JSON, no prose, no markdown.
-Shape: {"segments": [{"id": string, "section": string, "entry": string, "text": string}]}
+Shape: {"segments": [{"id": string, "section": string, "entry": string, "text": string, "kind"?: "list"}]}
 Rules:
 - "text" is copied CHARACTER-FOR-CHARACTER from the source, including any LaTeX inside it (\\textbf{...}, \\%, \\$). Do not normalize whitespace, quotes, or dashes. It must be a verbatim substring.
 - Include only the description sentence(s) of experience, project, leadership, research, or volunteering bullets: the content inside \\resumeItem{...}, after \\item, or similar.
-- Exclude section headers, dates, job titles, company names, degree lines, contact info, the skills/technologies list, and macro definitions.
-- One segment per bullet. "section" is the section heading ("Experience"); "entry" is the role/project name it belongs to.
+- Also include each line of list-style content (skills/technologies, relevant coursework, certifications, awards, interests, a summary) as its own segment with "kind": "list": just the content after any label (for "\\textbf{Languages}{: Python, SQL}" the text is "Python, SQL"), never the label or its LaTeX.
+- Exclude section headers, dates, job titles, company names, degree lines, contact info, and macro definitions.
+- One segment per bullet. "section" is the section heading ("Experience"); "entry" is the role/project name it belongs to (for a list line, its label, e.g. "Languages" or "Relevant Coursework"). Bullets omit "kind".
 - ids: "s1", "s2", ... in document order.`;
   const response = await client.messages.create({
     model: MODEL, max_tokens: 4000, system,
@@ -918,18 +925,25 @@ export type RewriteContext = {
 };
 
 const REWRITE_RULES = `You rephrase resume bullets so they surface the job's keywords, without changing what the candidate actually did. Output ONLY JSON, no prose, no markdown.
-Shape: {"rewrites": [{"id": string, "text": string, "keywords": string[]}]}
+Shape: {"rewrites": [{"id": string, "text": string, "keywords": string[]}], "note"?: string}
+"note" (only when the user made a request): one short sentence telling the user what you changed, or why you couldn't do part of it (e.g. the text they mean isn't among the segments).
 Hard rules, every one is checked by code and a violation discards your rewrite:
 - Rephrase ONLY. Never add a tool, technology, metric, outcome, team size, or claim that the original bullet does not already state or clearly demonstrate.
 - Use a keyword only when the original bullet already demonstrates it (e.g. "Flask" may be named if the bullet says a Flask API was built). Never work in a keyword the candidate has not shown.
+- Segments with "kind": "list" are skills, coursework, certifications and similar lines. Change them only when the user's request asks for it.
+- Exceptions, because the candidate is the one asking: when the user's request names specific skills, tools, or technologies to add, add each to the best-fitting "list" segment (matching its separators and style), and you may also name it in a bullet whose work plausibly used it; add only what the user named. When the user asks for a specific wording change anywhere (e.g. rename a course), make exactly that change.
 - Keep every number, percentage, dollar amount, and year exactly as written.
 - Keep every LaTeX command that appears in the original; add no new commands, no \\item, \\begin, \\end, \\\\ or blank lines. Keep LaTeX escapes (\\%, \\$, \\&).
-- Stay within 15% of the original's length so the resume keeps its page count.
+- Stay within 15% of the original's length so the resume keeps its page count ("list" segments may grow to fit requested additions).
 - Return only the segments you changed; omit the rest. "keywords" lists the job keywords the rewrite now names.
 - Prefer strong verbs and the job's vocabulary; keep the candidate's voice.`;
 
-/** Rewrite segments against keywords (and an optional chat instruction). Never throws (validator). */
-export async function rewriteResumeSegments(ctx: RewriteContext): Promise<Rewrite[]> {
+/**
+ * Rewrite segments against keywords (and an optional chat instruction). Never
+ * throws; null = the reply had no parseable JSON (prose, refusal, truncation),
+ * so a chat refinement can say so instead of silently changing nothing.
+ */
+export async function rewriteResumeSegments(ctx: RewriteContext): Promise<{ rewrites: Rewrite[]; note: string | null } | null> {
   const missing = ctx.keywords.filter((k) => !k.present).map((k) => `${k.term} (${k.category}, w${k.weight})`);
   const present = ctx.keywords.filter((k) => k.present).map((k) => k.term);
   const user = [
@@ -947,8 +961,10 @@ export async function rewriteResumeSegments(ctx: RewriteContext): Promise<Rewrit
     messages: [{ role: "user", content: user }],
   });
   try {
-    return validateRewrites(JSON.parse(stripFences(textFrom(response))), ctx.segments.map((s) => s.id));
+    const raw = JSON.parse(jsonObjectFrom(textFrom(response)));
+    const note = typeof raw?.note === "string" && raw.note.trim() ? raw.note.trim().slice(0, 500) : null;
+    return { rewrites: validateRewrites(raw, ctx.segments.map((s) => s.id)), note };
   } catch {
-    return ctx.currentRewrites ?? [];
+    return null;
   }
 }

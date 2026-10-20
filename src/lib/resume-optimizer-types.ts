@@ -8,8 +8,10 @@ export function isCompiler(v: unknown): v is Compiler {
   return typeof v === "string" && (COMPILERS as readonly string[]).includes(v);
 }
 
+/** "list" = a skills/coursework/certifications-style line: only chat edits it, and it may grow. */
+export type SegmentKind = "bullet" | "list";
 /** What Claude proposes: an exact substring of the .tex plus where it sits. */
-export type SegmentCandidate = { id: string; section: string; entry: string; text: string };
+export type SegmentCandidate = { id: string; section: string; entry: string; text: string; kind?: SegmentKind };
 /** A candidate that code verified occurs exactly once; offsets into the source. */
 export type Segment = SegmentCandidate & { start: number; end: number };
 
@@ -53,7 +55,7 @@ export function validateSegmentCandidates(raw: unknown): SegmentCandidate[] {
       const text = str(item.text);
       if (!id || !text.trim() || seen.has(id)) continue;
       seen.add(id);
-      out.push({ id, section: str(item.section), entry: str(item.entry), text });
+      out.push({ id, section: str(item.section), entry: str(item.entry), text, ...(item.kind === "list" ? { kind: "list" as const } : {}) });
     }
     return out;
   } catch {

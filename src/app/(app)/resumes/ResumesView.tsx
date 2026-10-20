@@ -72,7 +72,7 @@ export function ResumesView({ rows, applications, hasResumeTex }: { rows: Tailor
       const url = URL.createObjectURL(new Blob([res.tex], { type: "application/x-tex" }));
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${row.companyName.replace(/[^A-Za-z0-9]+/g, "-")}-resume.tex`;
+      a.download = `JosephBegley_${row.companyName.replace(/[^A-Za-z0-9]+/g, "")}_Resume.tex`;
       a.click();
       URL.revokeObjectURL(url);
     });

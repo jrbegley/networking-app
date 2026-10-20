@@ -13,9 +13,12 @@ import type { Change, Keyword, OptimizerResult } from "@/lib/resume-optimizer-ty
 import { coverage } from "@/lib/latex-resume";
 import { ResumeCompareModal } from "./ResumeCompareModal";
 
-type ChatMessage = { role: "user" | "assistant"; text: string };
+type ChatEdit = { id: string; label: string; before: string; after: string };
+type ChatRejected = { id: string; label: string; reason: string };
+type ChatMessage = { role: "user" | "assistant"; text: string; edits?: ChatEdit[]; rejected?: ChatRejected[] };
 
 const ERROR_COPY: Record<string, string> = {
+  refine_unparsed: "The model didn't return usable edits for that request, so nothing changed. Try rephrasing it.",
   resume_changed: "Your LaTeX resume changed in Settings since this run. Click Regenerate to tailor the new version.",
   no_segments: "Couldn't find rewritable bullets in this resume. Check that your experience/project bullets are plain \\item or \\resumeItem{...} text.",
   not_set_up: "The resume optimizer needs its database migration applied. Paste supabase/migrations/010_resume_optimizer.sql into the Supabase SQL editor and run it, then try again.",
@@ -40,8 +43,33 @@ function downloadBlob(bytes: BlobPart, type: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-function slug(s: string): string {
-  return s.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") || "resume";
+/** e.g. "Goldman Sachs", "pdf" → "JosephBegley_GoldmanSachs_Resume.pdf" */
+function resumeFilename(company: string, ext: string): string {
+  const name = company.replace(/[^A-Za-z0-9]+/g, "");
+  return `JosephBegley_${name ? `${name}_` : ""}Resume.${ext}`;
+}
+
+function effectiveText(c: Change): string {
+  return c.accepted && c.rewrite ? c.rewrite.text : c.segment.text;
+}
+
+/** What a chat refinement actually changed, bullet by bullet. */
+function diffChanges(prev: Change[], next: Change[]): { edits: ChatEdit[]; rejected: ChatRejected[] } {
+  const before = new Map(prev.map((c) => [c.segment.id, c]));
+  const edits: ChatEdit[] = [];
+  const rejected: ChatRejected[] = [];
+  for (const c of next) {
+    const old = before.get(c.segment.id);
+    if (!old) continue;
+    const label = `${c.segment.section}${c.segment.entry ? ` › ${c.segment.entry}` : ""}`;
+    const was = effectiveText(old);
+    const now = effectiveText(c);
+    if (was !== now) edits.push({ id: c.segment.id, label, before: was, after: now });
+    if (c.droppedReason && (c.droppedReason !== old.droppedReason || old.rewrite)) {
+      rejected.push({ id: c.segment.id, label, reason: DROPPED_COPY[c.droppedReason] ?? c.droppedReason });
+    }
+  }
+  return { edits, rejected };
 }
 
 /** Highlight the keywords a rewrite names, case-insensitively. */
@@ -233,19 +261,28 @@ export function ResumeOptimizerPanel({
     startTransition(async () => {
       const res = await refineResumeRewrites(applicationId, result, trimmed, lastPastedJd);
       applyResult(res);
-      setMessages((m) => [...m, { role: "assistant", text: res.ok ? "Updated the bullets." : "Couldn't apply that — try again." }]);
+      if (!res.ok) {
+        setMessages((m) => [...m, { role: "assistant", text: ERROR_COPY[res.reason] ?? "Couldn't apply that — try again." }]);
+        return;
+      }
+      const { edits, rejected } = diffChanges(result.changes, res.result.changes);
+      const summary = edits.length
+        ? `Changed ${edits.length} line${edits.length === 1 ? "" : "s"}${res.pdfBase64 ? " — PDF rebuilt." : "."}`
+        : rejected.length ? "Nothing changed — the edits were rejected:" : "Nothing changed.";
+      const text = res.note ? `${res.note} ${summary}` : summary;
+      setMessages((m) => [...m, { role: "assistant", text, edits, rejected }]);
     });
   }
 
   function handleDownloadPdf() {
     if (!pdfBase64) return;
     const bytes = Uint8Array.from(atob(pdfBase64), (c) => c.charCodeAt(0));
-    downloadBlob(bytes, "application/pdf", `${slug(companyName)}-resume.pdf`);
+    downloadBlob(bytes, "application/pdf", resumeFilename(companyName, "pdf"));
   }
 
   function handleDownloadTex() {
     if (!result) return;
-    downloadBlob(result.tex, "application/x-tex", `${slug(companyName)}-resume.tex`);
+    downloadBlob(result.tex, "application/x-tex", resumeFilename(companyName, "tex"));
   }
 
   function handleSave() {
@@ -344,11 +381,25 @@ export function ResumeOptimizerPanel({
             </div>
             <div>
               <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Refine by chat</h4>
-              <div className="mt-2 max-h-52 space-y-2 overflow-y-auto">
+              <div className="mt-2 max-h-80 space-y-2 overflow-y-auto">
                 {messages.length === 0 ? (
                   <p className="text-sm text-slate-400">Ask for a change — e.g. &ldquo;tighten the project bullets&rdquo; or &ldquo;lead with the API work.&rdquo;</p>
                 ) : messages.map((m, i) => (
-                  <p key={i} className={`rounded-md px-3 py-1.5 text-sm ${m.role === "user" ? "bg-indigo-100 text-indigo-900" : "bg-slate-100 text-slate-600"}`}>{m.text}</p>
+                  <div key={i} className={`rounded-md px-3 py-1.5 text-sm ${m.role === "user" ? "bg-indigo-100 text-indigo-900" : "bg-slate-100 text-slate-600"}`}>
+                    <p>{m.text}</p>
+                    {m.edits?.map((e) => (
+                      <div key={e.id} className="mt-2 border-t border-slate-200 pt-1.5">
+                        <p className="truncate text-xs font-medium text-slate-500">{e.label}</p>
+                        <p className="mt-0.5 font-mono text-xs text-slate-400 line-through">{e.before}</p>
+                        <p className="mt-0.5 font-mono text-xs text-slate-900">{e.after}</p>
+                      </div>
+                    ))}
+                    {m.rejected?.map((r) => (
+                      <p key={r.id} className="mt-1.5 text-xs text-amber-700">
+                        {r.label}: rewrite rejected ({r.reason}), kept original
+                      </p>
+                    ))}
+                  </div>
                 ))}
               </div>
               <div className="mt-3 flex gap-2">
