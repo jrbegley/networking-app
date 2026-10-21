@@ -11,6 +11,7 @@ import {
 import {
   locateSegments,
   validateRewrite,
+  escapeSpecials,
   spliceSegments,
   plainTextOf,
   markPresent,
@@ -23,6 +24,7 @@ import {
   withHighlightColors,
   reviewSources,
 } from "./src/lib/latex-resume";
+import { resumeFilename } from "./src/lib/resume-filename";
 
 let fails = 0;
 function check(label: string, got: unknown, want: unknown) {
@@ -93,6 +95,19 @@ const segments = locateSegments(source, candidates);
 check("locateSegments: keeps verbatim-unique, drops dup/missing/overlap", segments.map((s) => s.id), ["s1", "s2", "p1"]);
 check("locateSegments: offsets slice back to text", segments.every((s) => source.slice(s.start, s.end) === s.text), true);
 check("locateSegments: sorted by start", segments.every((s, i) => i === 0 || s.start > segments[i - 1].end), true);
+
+// ── resumeFilename ──────────────────────────────────────────────────────
+check("resumeFilename: spaced name + company", resumeFilename("Joseph Begley", "Goldman Sachs", "pdf"), "JosephBegley_GoldmanSachs_Resume.pdf");
+check("resumeFilename: email-style default name, lowercase company", resumeFilename("joseph.begley", "goldman sachs", "tex"), "JosephBegley_GoldmanSachs_Resume.tex");
+check("resumeFilename: punctuation stripped, inner caps kept", resumeFilename("Joseph Begley", "J.P. Morgan & Co.", "pdf"), "JosephBegley_JPMorganCo_Resume.pdf");
+check("resumeFilename: no name", resumeFilename(null, "McKinsey", "pdf"), "McKinsey_Resume.pdf");
+check("resumeFilename: no company", resumeFilename("Joseph Begley", "", "pdf"), "JosephBegley_Resume.pdf");
+
+// ── escapeSpecials ──────────────────────────────────────────────────────
+check("escapeSpecials: bare & escaped", escapeSpecials("Led M\\&A diligence", "Led M&A and R&D diligence"), "Led M\\&A and R\\&D diligence");
+check("escapeSpecials: already escaped untouched", escapeSpecials("x", "R\\&D at 50\\% #1"), "R\\&D at 50\\% \\#1");
+check("escapeSpecials: after \\\\ still escaped", escapeSpecials("x", "a\\\\&b"), "a\\\\\\&b");
+check("escapeSpecials: bare & in original kept bare", escapeSpecials("Python & SQL", "Python & SQL & Go"), "Python & SQL & Go");
 
 // ── validateRewrite ─────────────────────────────────────────────────────
 const orig = "Built a REST API in Python and Flask that served 1,200 requests per minute with 99.9\\% uptime";

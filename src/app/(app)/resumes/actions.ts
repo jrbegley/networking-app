@@ -5,8 +5,9 @@ import { revalidatePath } from "next/cache";
 import { resolveJobDescription } from "@/lib/job-description";
 import { segmentResumeTex, extractJobKeywords, rewriteResumeSegments } from "@/lib/claude";
 import { compileLatex } from "@/lib/latex-compile";
+import { resumeFilename } from "@/lib/resume-filename";
 import {
-  locateSegments, validateRewrite, spliceSegments, plainTextOf, markPresent, pdfPageCount,
+  locateSegments, validateRewrite, escapeSpecials, spliceSegments, plainTextOf, markPresent, pdfPageCount,
   reconstructOriginal, reviewSources,
 } from "@/lib/latex-resume";
 import {
@@ -16,7 +17,7 @@ import {
 
 // ── Result shapes ──────────────────────────────────────────────────────
 export type OptimizeResult =
-  | { ok: true; result: OptimizerResult; pdfBase64: string | null; compileLog: string | null; note?: string | null }
+  | { ok: true; result: OptimizerResult; pdfBase64: string | null; compileLog: string | null; note?: string | null; displayName: string | null }
   | { ok: false; reason: string; log?: string };
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
@@ -26,6 +27,7 @@ type ResumeProfile = {
   resume_tex_compiler: string | null;
   resume_tex_pages: number | null;
   resume_text: string | null;
+  display_name: string | null;
 };
 
 type ApplicationRow = { company_name: string; role_title: string; posting_url: string | null };
@@ -52,7 +54,7 @@ async function requireUser(supabase: Supabase): Promise<string | null> {
 async function loadResumeProfile(supabase: Supabase, userId: string): Promise<ResumeProfile> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("resume_tex, resume_tex_compiler, resume_tex_pages, resume_text")
+    .select("resume_tex, resume_tex_compiler, resume_tex_pages, resume_text, display_name")
     .eq("id", userId)
     .single();
   if (error) throw error;
@@ -78,7 +80,8 @@ async function loadApplicationRow(supabase: Supabase, applicationId: string): Pr
 function applyRewrites(changes: Change[], rewrites: Rewrite[], keepReverted = false): Change[] {
   const byId = new Map(rewrites.map((r) => [r.id, r]));
   return changes.map((c) => {
-    const r = byId.get(c.segment.id);
+    const raw = byId.get(c.segment.id);
+    const r = raw && { ...raw, text: escapeSpecials(c.segment.text, raw.text) };
     if (!r) {
       if (keepReverted && c.rewrite && !c.accepted) return c;
       return { ...c, rewrite: null, accepted: true, droppedReason: null };
@@ -114,11 +117,12 @@ function reconcileResult(result: OptimizerResult, profile: ResumeProfile): Optim
     let rewrite: Rewrite | null = null;
     let droppedReason: string | null = null;
     if (c.rewrite && typeof c.rewrite.text === "string") {
-      const v = validateRewrite(seg.text, c.rewrite.text, seg.kind === "list" ? "list" : "bullet");
+      const text = escapeSpecials(seg.text, c.rewrite.text);
+      const v = validateRewrite(seg.text, text, seg.kind === "list" ? "list" : "bullet");
       if (v.ok) {
         rewrite = {
           id: String(seg.id),
-          text: c.rewrite.text,
+          text,
           keywords: Array.isArray(c.rewrite.keywords)
             ? c.rewrite.keywords.filter((k): k is string => typeof k === "string")
             : [],
@@ -209,7 +213,7 @@ export async function optimizeResumeForApplication(
       (rewrites?.rewrites ?? []).filter((r) => !listIds.has(r.id)),
     );
     const base: OptimizerResult = { originalTex: source, tex: source, compiler, keywords, changes, pageWarning: false };
-    return { ok: true, ...(await compileResult(base, profile.resume_tex_pages)) };
+    return { ok: true, displayName: profile.display_name, ...(await compileResult(base, profile.resume_tex_pages)) };
   } catch (e) {
     return { ok: false, reason: errorReason(e) };
   }
@@ -247,7 +251,7 @@ export async function refineResumeRewrites(
     });
     if (!rewrites) return { ok: false, reason: "refine_unparsed" };
     const changes = applyRewrites(result.changes, rewrites.rewrites, true);
-    return { ok: true, note: rewrites.note, ...(await compileResult({ ...result, changes }, profile.resume_tex_pages)) };
+    return { ok: true, note: rewrites.note, displayName: profile.display_name, ...(await compileResult({ ...result, changes }, profile.resume_tex_pages)) };
   } catch (e) {
     return { ok: false, reason: errorReason(e) };
   }
@@ -262,7 +266,7 @@ export async function recompileResume(result: OptimizerResult): Promise<Optimize
     const profile = await loadResumeProfile(supabase, userId);
     const clean = reconcileResult(result, profile);
     if (!clean) return { ok: false, reason: "resume_changed" };
-    return { ok: true, ...(await compileResult(clean, profile.resume_tex_pages)) };
+    return { ok: true, displayName: profile.display_name, ...(await compileResult(clean, profile.resume_tex_pages)) };
   } catch (e) {
     return { ok: false, reason: errorReason(e) };
   }
@@ -338,15 +342,24 @@ export async function deleteTailoredResume(id: string): Promise<{ ok: true } | {
   }
 }
 
-/** Short-lived signed URL for a saved PDF. */
+/** "[Name]_[Company]_Resume.<ext>" for a saved tailored resume. */
+async function savedResumeFilename(supabase: Supabase, userId: string, company: string, ext: string): Promise<string> {
+  const { data } = await supabase.from("profiles").select("display_name").eq("id", userId).maybeSingle();
+  return resumeFilename((data as { display_name: string | null } | null)?.display_name, company, ext);
+}
+
+/** Short-lived signed URL that downloads a saved PDF as "[Name]_[Company]_Resume.pdf". */
 export async function tailoredResumePdfUrl(id: string): Promise<{ ok: true; url: string } | { ok: false; reason: string }> {
   try {
     const supabase = await createClient();
     const userId = await requireUser(supabase);
     if (!userId) return { ok: false, reason: "Not signed in." };
+    const { data: row, error: rowError } = await supabase.from("tailored_resumes").select("company_name").eq("id", id).single();
+    if (rowError) throw rowError;
+    const filename = await savedResumeFilename(supabase, userId, (row as { company_name: string }).company_name, "pdf");
     const { data, error } = await supabase.storage
       .from("tailored-resumes")
-      .createSignedUrl(`${userId}/${id}.pdf`, 60);
+      .createSignedUrl(`${userId}/${id}.pdf`, 60, { download: filename });
     if (error) throw error;
     return { ok: true, url: data.signedUrl };
   } catch (e) {
@@ -355,14 +368,15 @@ export async function tailoredResumePdfUrl(id: string): Promise<{ ok: true; url:
 }
 
 /** The saved .tex for a tailored resume (download button on the Resumes tab). */
-export async function tailoredResumeTex(id: string): Promise<{ ok: true; tex: string } | { ok: false; reason: string }> {
+export async function tailoredResumeTex(id: string): Promise<{ ok: true; tex: string; filename: string } | { ok: false; reason: string }> {
   try {
     const supabase = await createClient();
     const userId = await requireUser(supabase);
     if (!userId) return { ok: false, reason: "Not signed in." };
-    const { data, error } = await supabase.from("tailored_resumes").select("tex").eq("id", id).single();
+    const { data, error } = await supabase.from("tailored_resumes").select("tex, company_name").eq("id", id).single();
     if (error) throw error;
-    return { ok: true, tex: (data as { tex: string }).tex };
+    const row = data as { tex: string; company_name: string };
+    return { ok: true, tex: row.tex, filename: await savedResumeFilename(supabase, userId, row.company_name, "tex") };
   } catch (e) {
     return { ok: false, reason: errorReason(e) };
   }

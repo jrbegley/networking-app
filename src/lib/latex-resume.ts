@@ -44,6 +44,20 @@ function bracesBalanced(s: string): boolean {
   return depth === 0;
 }
 
+// `&`, `%`, `#` not preceded by an odd run of backslashes.
+const BARE_SPECIAL_RE = /(?<!\\)((?:\\\\)*)([&%#])/g;
+
+/**
+ * Escape bare `&`, `%`, `#` the model wrote as prose ("R&D" → "R\&D"). A char
+ * the original itself used bare (e.g. a tabular `&`) is left alone.
+ */
+export function escapeSpecials(original: string, rewritten: string): string {
+  const bareInOriginal = new Set(Array.from(original.matchAll(BARE_SPECIAL_RE), (m) => m[2]));
+  return rewritten.replace(BARE_SPECIAL_RE, (m, slashes: string, ch: string) =>
+    bareInOriginal.has(ch) ? m : `${slashes}\\${ch}`,
+  );
+}
+
 /** The edit rules from the spec. Pure; never throws. */
 export function validateRewrite(
   original: string,

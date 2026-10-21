@@ -11,6 +11,7 @@ import {
 } from "./actions";
 import type { Change, Keyword, OptimizerResult } from "@/lib/resume-optimizer-types";
 import { coverage } from "@/lib/latex-resume";
+import { resumeFilename } from "@/lib/resume-filename";
 import { ResumeCompareModal } from "./ResumeCompareModal";
 
 type ChatEdit = { id: string; label: string; before: string; after: string };
@@ -34,19 +35,16 @@ const DROPPED_COPY: Record<string, string> = {
   empty: "empty rewrite",
 };
 
-function downloadBlob(bytes: BlobPart, type: string, filename: string) {
+export function downloadBlob(bytes: BlobPart, type: string, filename: string) {
   const url = URL.createObjectURL(new Blob([bytes], { type }));
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
-}
-
-/** e.g. "Goldman Sachs", "pdf" → "JosephBegley_GoldmanSachs_Resume.pdf" */
-function resumeFilename(company: string, ext: string): string {
-  const name = company.replace(/[^A-Za-z0-9]+/g, "");
-  return `JosephBegley_${name ? `${name}_` : ""}Resume.${ext}`;
+  a.remove();
+  // Revoking synchronously can cancel the download in Safari/Firefox.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function effectiveText(c: Change): string {
@@ -161,6 +159,7 @@ export function ResumeOptimizerPanel({
   const [result, setResult] = useState<OptimizerResult | null>(null);
   const [pdfBase64, setPdfBase64] = useState<string | null>(null);
   const [compileLog, setCompileLog] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [pasteMode, setPasteMode] = useState(false);
@@ -190,6 +189,7 @@ export function ResumeOptimizerPanel({
       setResult(res.result);
       setPdfBase64(res.pdfBase64);
       setCompileLog(res.compileLog);
+      setDisplayName(res.displayName);
       setSaved(false);
     } else if (res.reason === "needs_paste") {
       setPasteMode(true);
@@ -277,12 +277,12 @@ export function ResumeOptimizerPanel({
   function handleDownloadPdf() {
     if (!pdfBase64) return;
     const bytes = Uint8Array.from(atob(pdfBase64), (c) => c.charCodeAt(0));
-    downloadBlob(bytes, "application/pdf", resumeFilename(companyName, "pdf"));
+    downloadBlob(bytes, "application/pdf", resumeFilename(displayName, companyName, "pdf"));
   }
 
   function handleDownloadTex() {
     if (!result) return;
-    downloadBlob(result.tex, "application/x-tex", resumeFilename(companyName, "tex"));
+    downloadBlob(result.tex, "application/x-tex", resumeFilename(displayName, companyName, "tex"));
   }
 
   function handleSave() {

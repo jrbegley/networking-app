@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { deleteTailoredResume, tailoredResumePdfUrl, tailoredResumeTex } from "./actions";
 import { ResumeCompareModal } from "./ResumeCompareModal";
-import { ResumeOptimizerPanel, KeywordChips, ChangeCards } from "./ResumeOptimizerPanel";
+import { ResumeOptimizerPanel, KeywordChips, ChangeCards, downloadBlob } from "./ResumeOptimizerPanel";
 import { coverage } from "@/lib/latex-resume";
 import type { Change, Keyword } from "@/lib/resume-optimizer-types";
 
@@ -59,7 +59,7 @@ export function ResumesView({ rows, applications, hasResumeTex }: { rows: Tailor
     setError(null);
     startTransition(async () => {
       const res = await tailoredResumePdfUrl(id);
-      if (res.ok) window.open(res.url, "_blank", "noopener,noreferrer");
+      if (res.ok) window.location.assign(res.url); // attachment disposition: downloads, no navigation
       else setError(res.reason);
     });
   }
@@ -69,12 +69,7 @@ export function ResumesView({ rows, applications, hasResumeTex }: { rows: Tailor
     startTransition(async () => {
       const res = await tailoredResumeTex(row.id);
       if (!res.ok) { setError(res.reason); return; }
-      const url = URL.createObjectURL(new Blob([res.tex], { type: "application/x-tex" }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `JosephBegley_${row.companyName.replace(/[^A-Za-z0-9]+/g, "")}_Resume.tex`;
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(res.tex, "application/x-tex", res.filename);
     });
   }
 
